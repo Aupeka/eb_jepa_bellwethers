@@ -748,8 +748,8 @@ python -m examples.ac_video_jepa.main --fname examples/ac_video_jepa/cfgs/train/
 python -m examples.ac_video_jepa.main \
     --meta.model_folder /path/to/run --meta.eval_only_mode True
 \end{lstlisting}
-Planning uses MPPI by default (\code{cfgs/planning\_mppi.yaml}); point
-\code{eval.plan\_cfg\_path} at \code{cfgs/planning\_cem.yaml} for CEM.
+Planning uses MPPI by default (\code{cfgs/planning/two\_rooms/planning\_mppi.yaml}); point
+\code{eval.plan\_cfg\_path} at \code{cfgs/planning/two\_rooms/planning\_cem.yaml} for CEM.
 
 \paragraph{Read it.}
 \begin{itemize}[leftmargin=1.4em,itemsep=1pt,topsep=2pt]
@@ -767,12 +767,12 @@ Planning uses MPPI by default (\code{cfgs/planning\_mppi.yaml}); point
 
 \paragraph{Key knobs.}
 \begin{lstlisting}[style=yml]
-# cfgs/train.yaml
+# cfgs/train/two_rooms/train.yaml
 model:  {encoder_architecture: impala, dobs: 2, dstc: 32, nsteps: 8}  # nsteps = K
   regularizer: {cov_coeff: 8, std_coeff: 16, sim_coeff_t: 12, idm_coeff: 1}
 optim:  {epochs: 12, lr: 0.001}
 data:   {batch_size: 384}
-# cfgs/planning_mppi.yaml
+# cfgs/planning/two_rooms/planning_mppi.yaml
 planner: {planner_name: mppi, plan_length: 90, n_iters: 20, num_samples: 200, num_elites: 20, temperature: 0.005}
 \end{lstlisting}
 
