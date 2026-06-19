@@ -268,9 +268,13 @@ def write_outputs(out_dir, cfg, meta, one_step, rollout, viz):
 
 
 def _plot_vrmse_vs_horizon(out_dir, cfg, rollout, horizons):
+    h = np.asarray(horizons)
     plt.figure(figsize=(7, 4.5))
     for e in cfg.models:
-        plt.plot(horizons, rollout[e.name]["official"], marker="o", ms=3, label=e.name)
+        v = np.asarray(rollout[e.name]["official"], dtype=float)
+        m = np.isfinite(v)  # drop diverged (inf/nan) points so the log plot stays readable
+        label = e.name + (" (diverged)" if not m.all() else "")
+        plt.plot(h[m], v[m], marker="o", ms=3, label=label)
     plt.plot(horizons, rollout["persistence"]["official"], "k--", lw=1.2, label="persistence")
     plt.axhline(1.0, color="gray", ls=":", lw=1, label="mean predictor (VRMSE=1)")
     plt.xlabel("rollout horizon (steps)")
@@ -349,9 +353,16 @@ def main():
 
     for name in models:
         v = rollout[name]["official"]
-        assert np.isfinite(v).all(), f"non-finite VRMSE for {name}"
+        # Autoregressive surrogates (esp. FNO/TFNO) can genuinely diverge to inf/nan at
+        # long horizons. That is a reportable result, not a crash: warn and keep going so
+        # outputs are still written for every model (the diverging step is recorded as inf/nan).
+        if not np.isfinite(v).all():
+            first_bad = int(np.argmax(~np.isfinite(v))) + 1
+            print(f"   [warn] {name}: non-finite VRMSE from horizon {first_bad} "
+                  f"(rollout diverged) - recorded as inf/nan", flush=True)
+        hH_str = f"{v[-1]:.4f}" if np.isfinite(v[-1]) else "inf"
         print(f"   {name:11s} one-step={np.mean(one_step[name]):.4f}  "
-              f"h1={v[0]:.4f} hH={v[-1]:.4f}  windows={window_means(v)}", flush=True)
+              f"h1={v[0]:.4f} hH={hH_str}  windows={window_means(v)}", flush=True)
 
     write_outputs(out_dir, cfg, meta, one_step, rollout, viz)
 
