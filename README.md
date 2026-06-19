@@ -72,6 +72,14 @@ JEPA for world modeling + planning in Two Rooms environment.
 
 ## 🚀 Installation
 
+### HTW cluster — quick start (hackathon only)
+
+> Skip this section unless you are on the HTW hackathon cluster — the generic install above is all you need locally.
+
+Please follow the [setup instructions](setup.md) before starting the project.
+
+---
+
 ### Local / generic (start here)
 
 We use [uv](https://docs.astral.sh/uv/guides/projects/) for package management.
@@ -105,38 +113,6 @@ export EBJEPA_CKPTS=/path/to/checkpoints
 ```
 
 Verify the install with `uv run pytest tests/`.
-
-### HTW cluster — quick start (optional, hackathon only)
-
-> Skip this section unless you are on the HTW hackathon cluster — the generic install above is all you need locally.
-
-**Everything must live on `/lustre/work`, not your home** — the `/lustre/home` quota is
-small and blocks git, venvs and model downloads. You don't have to clone in the right
-place: `setup.sh` **relocates itself to `/lustre/work` automatically**.
-
-```bash
-# 1. clone anywhere (even your home) and run setup
-git clone https://github.com/Trick5t3r/eb_jepa.git eb_jepa && cd eb_jepa
-bash setup.sh
-#    -> the repo is copied to /lustre/work/pdl17890/$USER/eb_jepa, set up there,
-#       and the folder you cloned in is reduced to a one-line pointer README.
-
-# 2. move into the work copy (the pointer README tells you the exact path)
-cd /lustre/work/pdl17890/$USER/eb_jepa
-
-# 3. make it persistent + verify
-echo "source $(pwd)/env.sh" >> ~/.bashrc && source ~/.bashrc
-sbatch slurm_test.sh        # runs pytest on a GPU node
-```
-
-`env.sh` derives everything from `$USER`, keeps **all** caches (uv, HuggingFace, torch,
-triton/`torch.compile`, pip, W&B) under `$WORK/.cache` — nothing touches home. Override the work
-root with `export EBJEPA_WORK=/your/path` before running setup, and set `EBJEPA_DSETS` to your
-dataset folder.
-
-
-
----
 
 ## 🏋️ Training
 
