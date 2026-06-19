@@ -1,0 +1,18 @@
+# The Well surrogate-baseline eval config — turbulent_radiative_layer_2D (P1 smoke / P3 full).
+# Smallest dataset (6.9 GB) -> fastest to fetch, used as the smoke/debug dataset.
+dataset: turbulent_radiative_layer_2D
+n_steps_input: 4
+H: 30
+batch_size: 8
+data_workers: 8
+viz_field: 0           # 0 = density
+models:
+  - {name: FNO,        kind: FNO,           id: polymathic-ai/FNO-turbulent_radiative_layer_2D}
+  - {name: TFNO,       kind: TFNO,          id: polymathic-ai/TFNO-turbulent_radiative_layer_2D}
+  - {name: U-Net,      kind: UNetClassic,   id: polymathic-ai/UNetClassic-turbulent_radiative_layer_2D}
+  - {name: CNextU-Net, kind: UNetConvNext,  id: polymathic-ai/UNetConvNext-turbulent_radiative_layer_2D}
+smoke:
+  H: 8
+  batch_size: 2
+  max_trajectories: 4
+  max_one_step_batches: 4

@@ -1,0 +1,20 @@
+# The Well surrogate-baseline eval config — rayleigh_benard (P4, full eval OPTIONAL).
+# Heaviest dataset (342 GB, test ~34 GB). Smoke always works (streams a few trajectories);
+# only run full eval if the data is staged on /lustre/work or HF streaming is fast enough.
+# Stored on a uniform pixel grid (Chebyshev-sampled in y), so loading/metrics are unchanged.
+dataset: rayleigh_benard
+n_steps_input: 4
+H: 30
+batch_size: 4
+data_workers: 8
+viz_field: 0           # 0 = buoyancy
+models:
+  - {name: FNO,        kind: FNO,           id: polymathic-ai/FNO-rayleigh_benard}
+  - {name: TFNO,       kind: TFNO,          id: polymathic-ai/TFNO-rayleigh_benard}
+  - {name: U-Net,      kind: UNetClassic,   id: polymathic-ai/UNetClassic-rayleigh_benard}
+  - {name: CNextU-Net, kind: UNetConvNext,  id: polymathic-ai/UNetConvNext-rayleigh_benard}
+smoke:
+  H: 8
+  batch_size: 1
+  max_trajectories: 3
+  max_one_step_batches: 3

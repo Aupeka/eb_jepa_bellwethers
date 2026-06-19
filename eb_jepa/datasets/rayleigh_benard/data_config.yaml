@@ -1,0 +1,13 @@
+# Rayleigh-Benard defaults (The Well, 2D physical video for JEPA).
+# Field names + per-field z-score stats are read from The Well stats.yaml at runtime
+# (not hardcoded); set well_base_path to a staged copy on /lustre/work, else streams from HF.
+# Heaviest dataset (342 GB) -> prefer a local staged copy.
+well_base_path: ""                 # "" -> $THE_WELL_BASE_PATH / $EBJEPA_DSETS / hf://datasets/polymathic-ai/
+well_dataset_name: rayleigh_benard
+channels: 4                        # buoyancy, pressure, velocity_x, velocity_y (z-scored per field)
+img_size: [512, 128]
+n_frames: 16                       # frames per clip
+time_stride: 1                     # stride 1 to match the official protocol
+epoch_size: 8000                   # random clips per epoch (0 -> use full dataset)
+batch_size: 4                      # larger grid -> smaller batch
+num_workers: 8

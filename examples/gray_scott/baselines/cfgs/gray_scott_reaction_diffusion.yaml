@@ -1,0 +1,19 @@
+# The Well surrogate-baseline eval config — gray_scott_reaction_diffusion (P2, main deliverable).
+# Protocol is fixed by The Well: n_steps_input=4, n_steps_output=1, ZScore, stride 1.
+dataset: gray_scott_reaction_diffusion
+n_steps_input: 4
+H: 30                  # rollout horizon (covers windows 6:12 and 13:30)
+batch_size: 8
+data_workers: 8
+viz_field: 1           # field index to visualize (1 = chemical B)
+models:
+  - {name: FNO,        kind: FNO,           id: polymathic-ai/FNO-gray_scott_reaction_diffusion}
+  - {name: TFNO,       kind: TFNO,          id: polymathic-ai/TFNO-gray_scott_reaction_diffusion}
+  - {name: U-Net,      kind: UNetClassic,   id: polymathic-ai/UNetClassic-gray_scott_reaction_diffusion}
+  - {name: CNextU-Net, kind: UNetConvNext,  id: polymathic-ai/UNetConvNext-gray_scott_reaction_diffusion}
+# Smoke overrides (merged on top when --smoke is passed).
+smoke:
+  H: 8
+  batch_size: 2
+  max_trajectories: 4      # rollout trajectories to score
+  max_one_step_batches: 4  # one-step batches to score
