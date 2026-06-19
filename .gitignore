@@ -6,6 +6,9 @@ jepa_decoder.pth
 *.pth
 *.pyc
 
+# Generated presentation figures (regenerate by re-running figures/ notebooks)
+figures/out/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -230,3 +233,5 @@ arxiv/
 arxiv_tmp/
 CLAUDE.md
 setup.md
+.cursor/rules/
+AGENTS.md
