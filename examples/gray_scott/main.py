@@ -72,7 +72,7 @@ def build_jepa(encoder, cfg):
     the VC anti-collapse coefficients from ``cfg.loss``."""
     mcfg, lcfg = cfg.model, cfg.loss
 
-    predictor = jepa.StateOnlyPredictor(
+    predictor = architectures.StateOnlyPredictor(
         architectures.ResUNet(2 * mcfg.dstc, mcfg.hpre, mcfg.dstc),
         context_length=2)
 
