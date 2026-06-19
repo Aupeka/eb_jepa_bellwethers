@@ -116,6 +116,11 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
     ckpt_dir = folder or cfg.meta.ckpt_dir
     os.makedirs(ckpt_dir, exist_ok=True)
     gstep = 0
+    
+    best_val_loss = float('inf')
+    epochs_without_improvement = 0
+    patience = cfg.training.get("early_stopping_patience", 5) if hasattr(cfg, "training") else 5
+    
     for epoch in range(cfg.optim.epochs):
         jepa.train()
         t0 = time.time()
@@ -144,13 +149,33 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
                     _, (jl, _, _, _, _) = jepa.unroll(x, actions=None, nsteps=cfg.model.steps,
                                                       unroll_mode="parallel", compute_loss=True)
                 vl += jl.item(); nb += 1
-        print(f"[epoch {epoch}] {time.time() - t0:.0f}s | val_loss={vl / max(nb, 1):.4f}", flush=True)
+        val_loss = vl / max(nb, 1)
+        print(f"[epoch {epoch}] {time.time() - t0:.0f}s | val_loss={val_loss:.4f}", flush=True)
+        
+        # Save latest checkpoint
         torch.save({"epoch": epoch,
                     "encoder": encoder.state_dict(),
                     "jepa": jepa.state_dict(),
                     "cfg": OmegaConf.to_container(cfg, resolve=True)},
                    os.path.join(ckpt_dir, "latest.pth.tar"))
-    print(f"[gs] done -> {ckpt_dir}/latest.pth.tar", flush=True)
+                   
+        # Early stopping logic
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            epochs_without_improvement = 0
+            # Save best checkpoint
+            torch.save({"epoch": epoch,
+                        "encoder": encoder.state_dict(),
+                        "jepa": jepa.state_dict(),
+                        "cfg": OmegaConf.to_container(cfg, resolve=True)},
+                       os.path.join(ckpt_dir, "best.pth.tar"))
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= patience:
+                print(f"[gs] Early stopping triggered! No improvement for {patience} epochs.", flush=True)
+                break
+
+    print(f"[gs] done -> {ckpt_dir}/latest.pth.tar and best.pth.tar", flush=True)
 
 
 if __name__ == "__main__":
