@@ -66,14 +66,19 @@ def build_jepa(encoder, cfg):
       * prediction loss: ``SquareLossSeq(projector)`` on the projected latents.
     Build via ``JEPA(encoder, encoder, predictor, regularizer, predcost)``; the
     training loop below drives it with ``jepa.unroll(x, actions=None, ...)``.
-    Keep the VC anti-collapse term — it is what stops the latent from collapsing."""
+    Keep the VC anti-collapse term — it is what stops the latent from collapsing.
+
+    Takes the full ``cfg`` so it can read architecture dims from ``cfg.model`` and
+    the VC anti-collapse coefficients from ``cfg.loss``."""
+    mcfg, lcfg = cfg.model, cfg.loss
 
     predictor = jepa.StateOnlyPredictor(
-        architectures.ResUNet(2 * cfg.dstc, cfg.hpre, cfg.dstc),
+        architectures.ResUNet(2 * mcfg.dstc, mcfg.hpre, mcfg.dstc),
         context_length=2)
 
-    anti_collapse = losses.VCLoss(cfg.std_coeff, cfg.cov_coeff,
-                                  proj=architectures.Projector(f"{cfg.dstc}-{cfg.dstc*4}-{cfg.dstc*4}"))
+    anti_collapse = losses.VCLoss(
+        lcfg.std_coeff, lcfg.cov_coeff,
+        proj=architectures.Projector(f"{mcfg.dstc}-{mcfg.dstc * 4}-{mcfg.dstc * 4}"))
 
     pred_cost = losses.SquareLossSeq(anti_collapse.proj)
 
@@ -100,7 +105,7 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
           f"stride={dcfg.time_stride} | {len(train_loader)} steps/epoch", flush=True)
 
     encoder = build_encoder(cfg.model).to(device)
-    jepa = build_jepa(encoder, cfg.model).to(device)
+    jepa = build_jepa(encoder, cfg).to(device)
     print(f"[gs] params: {sum(p.numel() for p in jepa.parameters()) / 1e6:.2f}M", flush=True)
 
     opt = torch.optim.Adam(jepa.parameters(), lr=cfg.optim.lr)
