@@ -24,6 +24,7 @@ import torch
 from omegaconf import OmegaConf
 
 from eb_jepa.datasets.gray_scott.dataset import GrayScottConfig, make_loader
+from eb_jepa import architectures, losses, jepa
 
 # Reuse the eb_jepa core — DO NOT reimplement these:
 #   eb_jepa.architectures: ResNet5 / ImpalaEncoder (2D encoders), ResUNet
@@ -46,7 +47,8 @@ def build_encoder(cfg):
     drop-in choice — stride-1 / no avg-pool keeps the latent at full ``h=w=128``
     resolution (so a decoder can later map it back to a field). ``ImpalaEncoder``
     is the heavier alternative. Expose ``out_d`` (= D = dstc) for downstream use."""
-    raise NotImplementedError("TODO: build the 2D frame encoder (see docstring)")
+    # TODO Unet or IMPALA
+    return architectures.ResNet5(in_d=2, h_d=cfg.henc, out_d=cfg.dstc)
 
 
 # --------------------------------------------------------------------------- #
@@ -65,7 +67,17 @@ def build_jepa(encoder, cfg):
     Build via ``JEPA(encoder, encoder, predictor, regularizer, predcost)``; the
     training loop below drives it with ``jepa.unroll(x, actions=None, ...)``.
     Keep the VC anti-collapse term — it is what stops the latent from collapsing."""
-    raise NotImplementedError("TODO: assemble the temporal JEPA (see docstring)")
+
+    predictor = jepa.StateOnlyPredictor(
+        architectures.ResUNet(2 * cfg.dstc, cfg.hpre, cfg.dstc),
+        context_length=2)
+
+    anti_collapse = losses.VCLoss(cfg.std_coeff, cfg.cov_coeff,
+                                  proj=architectures.Projector(f"{cfg.dstc}-{cfg.dstc*4}-{cfg.dstc*4}"))
+
+    pred_cost = losses.SquareLossSeq(anti_collapse.proj)
+
+    return jepa.JEPA(encoder, encoder, predictor, anti_collapse, pred_cost)
 
 
 # --------------------------------------------------------------------------- #
