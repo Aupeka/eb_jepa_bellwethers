@@ -1,0 +1,99 @@
+{
+  "dataset": "gray_scott_reaction_diffusion",
+  "protocol": {
+    "n_steps_input": 4,
+    "n_steps_output": 1,
+    "stride": 1,
+    "normalization": "ZScore (denormalized/physical-space VRMSE)",
+    "H": 30,
+    "windows": {
+      "6:12": [
+        6,
+        12
+      ],
+      "13:30": [
+        13,
+        30
+      ]
+    },
+    "vrmse": "official per-sample the_well.benchmark.metrics.VRMSE; 'aggregated' = sqrt(sum MSE / sum var)"
+  },
+  "fields": [
+    "A",
+    "B"
+  ],
+  "models": {
+    "FNO": {
+      "one_step_vrmse_field_avg": 38.03166198730469,
+      "one_step_vrmse_per_field": {
+        "A": 55.376708984375,
+        "B": 20.68661117553711
+      },
+      "rollout_window_vrmse_official": {
+        "6:12": 266126.46875,
+        "13:30": Infinity
+      },
+      "rollout_window_vrmse_aggregated": {
+        "6:12": 188919.875,
+        "13:30": 3842433972436992.0
+      }
+    },
+    "TFNO": {
+      "one_step_vrmse_field_avg": 1212.57666015625,
+      "one_step_vrmse_per_field": {
+        "A": 1639.005126953125,
+        "B": 786.1482543945312
+      },
+      "rollout_window_vrmse_official": {
+        "6:12": 1.4425820189687808e+16,
+        "13:30": NaN
+      },
+      "rollout_window_vrmse_aggregated": {
+        "6:12": 1.114614343401472e+16,
+        "13:30": NaN
+      }
+    },
+    "U-Net": {
+      "one_step_vrmse_field_avg": 0.040695130825042725,
+      "one_step_vrmse_per_field": {
+        "A": 0.037892263382673264,
+        "B": 0.043497998267412186
+      },
+      "rollout_window_vrmse_official": {
+        "6:12": 0.626079261302948,
+        "13:30": 15.471158981323242
+      },
+      "rollout_window_vrmse_aggregated": {
+        "6:12": 0.48316335678100586,
+        "13:30": 1.67014741897583
+      }
+    },
+    "CNextU-Net": {
+      "one_step_vrmse_field_avg": 0.03208053484559059,
+      "one_step_vrmse_per_field": {
+        "A": 0.03504407778382301,
+        "B": 0.02911699190735817
+      },
+      "rollout_window_vrmse_official": {
+        "6:12": 0.3121732771396637,
+        "13:30": 2.140594244003296
+      },
+      "rollout_window_vrmse_aggregated": {
+        "6:12": 0.2726931869983673,
+        "13:30": 0.5728673338890076
+      }
+    },
+    "persistence": {
+      "rollout_window_vrmse_official": {
+        "6:12": 2.5872108936309814,
+        "13:30": 25.414508819580078
+      }
+    },
+    "mean": {
+      "rollout_window_vrmse_official": {
+        "6:12": 1.6901804208755493,
+        "13:30": 19.586673736572266
+      }
+    }
+  }
+}
