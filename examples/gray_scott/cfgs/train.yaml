@@ -31,3 +31,5 @@ training:
   dtype: bfloat16
 logging:
   log_every: 50
+  save_predictions: true   # latent prediction-vs-target artifacts per epoch
+  pred_samples: 4          # number of horizons shown in the heatmap panel
