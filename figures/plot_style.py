@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import glob
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -36,6 +37,12 @@ FIELD_CMAPS = {"A": "viridis", "B": "magma"}
 
 # Output directory for generated figures (sibling of this file).
 OUT_DIR = Path(__file__).resolve().parent / "out"
+
+# Default local store for downloaded Well data. The repo's .gitignore ignores
+# /datasets/, so this stays out of version control.
+DSET_BASE = Path(__file__).resolve().parents[1] / "datasets" / "the_well"
+# HuggingFace dataset repo template for The Well datasets.
+WELL_REPO_FMT = "polymathic-ai/{dataset}"
 
 
 # ----------------------------------------------------------------------------- #
@@ -126,9 +133,137 @@ def find_hdf5_files(data_root: str, split: str) -> List[str]:
     return sorted(glob.glob(os.path.join(data_root, "data", split, "*.hdf5")))
 
 
+_REGIME_RE = re.compile(r"_([a-zA-Z]+)_F_([0-9.]+)_k_([0-9.]+)\.hdf5$")
+
+
+def parse_regime(filename: str) -> Tuple[str, Optional[float], Optional[float]]:
+    """Parse ``..._<regime>_F_<F>_k_<k>.hdf5`` -> ``(regime, F, k)``.
+
+    Falls back to ``(stem, None, None)`` when the name does not match.
+    """
+    m = _REGIME_RE.search(filename)
+    if not m:
+        return (Path(filename).stem, None, None)
+    regime, F, k = m.group(1), float(m.group(2)), float(m.group(3))
+    return (regime, F, k)
+
+
 def _regime_label_from_path(path: str) -> str:
-    """Best-effort short label for a regime file (its stem)."""
-    return Path(path).stem
+    """Best-effort short label for a regime file (e.g. ``maze (F=0.029, k=0.057)``)."""
+    regime, F, k = parse_regime(os.path.basename(path))
+    if F is None:
+        return Path(path).stem
+    return f"{regime} (F={F}, k={k})"
+
+
+# ----------------------------------------------------------------------------- #
+# Remote (HuggingFace) data download — per-file, by id
+# ----------------------------------------------------------------------------- #
+def list_remote_files(
+    dataset: str = "gray_scott_reaction_diffusion",
+    split: str = "valid",
+    repo_id: Optional[str] = None,
+) -> List[dict]:
+    """List the HDF5 files of ``<dataset>/data/<split>`` in the HF repo, with ids.
+
+    Returns dicts ``{id, filename, rfilename, regime, F, k, size_mb}`` sorted by
+    filename, so ``id`` matches the on-disk order used by :func:`find_hdf5_files`
+    (and the loader's ``sorted(glob(...))``). Requires ``huggingface_hub``.
+    """
+    try:
+        from huggingface_hub import HfApi
+    except ImportError as e:
+        raise ImportError(
+            "huggingface_hub is required for remote listing/download "
+            "(pip install huggingface_hub)"
+        ) from e
+
+    repo_id = repo_id or WELL_REPO_FMT.format(dataset=dataset)
+    info = HfApi().repo_info(repo_id, repo_type="dataset", files_metadata=True)
+    prefix = f"data/{split}/"
+    sibs = [s for s in info.siblings
+            if s.rfilename.startswith(prefix) and s.rfilename.endswith(".hdf5")]
+    sibs.sort(key=lambda s: s.rfilename)
+    out = []
+    for i, s in enumerate(sibs):
+        fname = os.path.basename(s.rfilename)
+        regime, F, k = parse_regime(fname)
+        size_mb = (s.size or 0) / 1e6
+        out.append({"id": i, "filename": fname, "rfilename": s.rfilename,
+                    "regime": regime, "F": F, "k": k, "size_mb": size_mb})
+    return out
+
+
+def format_remote_listing(files: List[dict]) -> str:
+    """Pretty-print a :func:`list_remote_files` result as an id table."""
+    if not files:
+        return "(no files found)"
+    lines = [f"{'id':>3}  {'regime':<10} {'F':>7} {'k':>7} {'size':>9}  filename"]
+    for f in files:
+        F = "-" if f["F"] is None else f"{f['F']:.3f}"
+        k = "-" if f["k"] is None else f"{f['k']:.3f}"
+        lines.append(f"{f['id']:>3}  {f['regime']:<10} {F:>7} {k:>7} "
+                     f"{f['size_mb']:>7.0f}MB  {f['filename']}")
+    return "\n".join(lines)
+
+
+def download_well_files(
+    dataset: str = "gray_scott_reaction_diffusion",
+    split: str = "valid",
+    ids=(0,),
+    base_dir=None,
+    with_stats: bool = True,
+    repo_id: Optional[str] = None,
+) -> str:
+    """Download selected ``<dataset>/data/<split>`` HDF5 files by id; return DATA_ROOT.
+
+    Files land at ``<base_dir>/<dataset>/data/<split>/<file>.hdf5`` (the layout
+    :func:`find_hdf5_files` expects), so the returned path is a ready-to-use
+    ``DATA_ROOT``. Already-present files are skipped. Requires ``huggingface_hub``.
+    """
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError as e:
+        raise ImportError(
+            "huggingface_hub is required for remote listing/download "
+            "(pip install huggingface_hub)"
+        ) from e
+
+    repo_id = repo_id or WELL_REPO_FMT.format(dataset=dataset)
+    base_dir = Path(base_dir) if base_dir is not None else DSET_BASE
+    data_root = base_dir / dataset
+    data_root.mkdir(parents=True, exist_ok=True)
+
+    available = list_remote_files(dataset, split, repo_id=repo_id)
+    by_id = {f["id"]: f for f in available}
+    if isinstance(ids, int):
+        ids = [ids]
+    selected = []
+    for i in ids:
+        if i not in by_id:
+            raise ValueError(f"id {i} not in available ids {sorted(by_id)} "
+                             f"for {dataset}/{split}")
+        selected.append(by_id[i])
+
+    total_mb = sum(f["size_mb"] for f in selected)
+    print(f"[download] {repo_id} :: {split} :: ids={list(ids)} "
+          f"-> {data_root}  (~{total_mb:.0f} MB)", flush=True)
+
+    for f in selected:
+        dest = data_root / f["rfilename"]
+        if dest.exists():
+            print(f"   skip (exists): {f['rfilename']}", flush=True)
+            continue
+        print(f"   fetching: {f['rfilename']} (~{f['size_mb']:.0f} MB)", flush=True)
+        hf_hub_download(repo_id, filename=f["rfilename"], repo_type="dataset",
+                        local_dir=str(data_root))
+    if with_stats:
+        try:
+            hf_hub_download(repo_id, filename="data/stats.yaml",
+                            repo_type="dataset", local_dir=str(data_root))
+        except Exception as e:  # stats are optional for our loader
+            print(f"   (stats.yaml not fetched: {e})", flush=True)
+    return str(data_root)
 
 
 def _load_hdf5_trajectory(
@@ -469,3 +604,31 @@ def radial_power_spectrum(img: np.ndarray, n_bins: int = 64) -> Tuple[np.ndarray
     k = 0.5 * (bins[:-1] + bins[1:])
     valid = counts > 0
     return k[valid], radial[valid]
+
+
+# ----------------------------------------------------------------------------- #
+# CLI: list / download Well files by id without a notebook
+# ----------------------------------------------------------------------------- #
+def _main() -> None:
+    import argparse
+
+    ap = argparse.ArgumentParser(
+        description="List or download The Well HDF5 files by id (figures helper).")
+    ap.add_argument("--dataset", default="gray_scott_reaction_diffusion")
+    ap.add_argument("--split", default="valid", choices=["train", "valid", "test"])
+    ap.add_argument("--list", action="store_true", help="list available files + ids")
+    ap.add_argument("--download", type=int, nargs="+", metavar="ID",
+                    help="download these file ids")
+    ap.add_argument("--base-dir", default=None, help=f"store under here (default {DSET_BASE})")
+    args = ap.parse_args()
+
+    if args.list or not args.download:
+        print(format_remote_listing(list_remote_files(args.dataset, args.split)))
+    if args.download:
+        root = download_well_files(args.dataset, args.split, ids=args.download,
+                                   base_dir=args.base_dir)
+        print(f"DATA_ROOT={root}")
+
+
+if __name__ == "__main__":
+    _main()
