@@ -159,7 +159,7 @@ def build_decoder(encoder, dstc, device, ckpt_path, cfg, kind="cnn", hidden=64):
         decoder.train()
         encoder.eval()
 
-        for epoch in range(30):
+        for epoch in range(15):
             try:
                 total_loss = 0
                 for batch in train_loader:
