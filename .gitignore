@@ -234,5 +234,17 @@ arxiv/
 arxiv_tmp/
 CLAUDE.md
 setup.md
+<<<<<<< HEAD
 .cursor/rules/
 AGENTS.md
+=======
+
+# Python environments
+.venv/
+.venv-dalia/
+venv/
+env/
+envs/
+__pycache__/
+*.pyc
+>>>>>>> 9250089 (Evaluation results)

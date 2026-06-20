@@ -176,6 +176,7 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
                 break
 
     print(f"[gs] done -> {ckpt_dir}/latest.pth.tar and best.pth.tar", flush=True)
+    return best_val_loss
 
 
 if __name__ == "__main__":
