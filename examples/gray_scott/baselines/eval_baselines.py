@@ -48,6 +48,7 @@ from examples.gray_scott.baselines.well_rollout import (
 )
 from examples.gray_scott.baselines.viz import (
     make_rollout_gif,
+    plot_per_field_vrmse,
     plot_spectral_diagnostic,
     plot_vrmse_with_bands,
     stability_horizon,
@@ -201,27 +202,31 @@ def run_rollout(ev: WellEvaluator, models, rollout_loader, H, max_trajectories=N
 
     The rollout loader may be batched (B>1); ``max_trajectories`` caps the number of
     TRAJECTORIES (samples) consumed, not batches."""
-    per_traj = {name: [] for name in models}          # list of [B, T] field-averaged per sample
-    agg_num = {name: None for name in models}          # running sum [T, C]
-    agg_den = {name: None for name in models}
-    base_per_traj = {"persistence": [], "mean": []}
+    series = list(models) + ["persistence", "mean"]
+    per_traj = {name: [] for name in series}           # list of [B, T] field-averaged per sample
+    agg_num = {name: None for name in series}           # running sum [T, C]
+    agg_den = {name: None for name in series}
     viz = None
     seen = 0
+
+    def _accumulate(name, y_pred, y_ref):
+        per_traj[name].append(ev.vrmse_per_sample(y_pred, y_ref))  # [B, T]
+        num, den = ev.vrmse_terms_per_step(y_pred, y_ref)
+        agg_num[name] = num if agg_num[name] is None else agg_num[name] + num
+        agg_den[name] = den if agg_den[name] is None else agg_den[name] + den
+
     for bi, batch in enumerate(rollout_loader):
         first_batch = bi == 0
         viz_models = {}
         for name, model in models.items():
             y_pred, y_ref = ev.rollout_model(model, batch, max_rollout_steps=H)
             assert y_pred.shape == y_ref.shape, f"{name}: {y_pred.shape} vs {y_ref.shape}"
-            per_traj[name].append(ev.vrmse_per_sample(y_pred, y_ref))  # [B, T]
-            num, den = ev.vrmse_terms_per_step(y_pred, y_ref)
-            agg_num[name] = num if agg_num[name] is None else agg_num[name] + num
-            agg_den[name] = den if agg_den[name] is None else agg_den[name] + den
+            _accumulate(name, y_pred, y_ref)
             if first_batch:
                 viz_models[name] = y_pred[0].float().cpu().numpy()  # [T, *spatial, C]
         persistence, mean_pred, y_ref = ev.persistence_and_mean(batch, max_rollout_steps=H)
-        base_per_traj["persistence"].append(ev.vrmse_per_sample(persistence, y_ref))
-        base_per_traj["mean"].append(ev.vrmse_per_sample(mean_pred, y_ref))
+        _accumulate("persistence", persistence, y_ref)
+        _accumulate("mean", mean_pred, y_ref)
         if first_batch:
             viz = {"truth": y_ref[0].float().cpu().numpy(), "models": viz_models}
         seen += y_ref.shape[0]
@@ -234,13 +239,12 @@ def run_rollout(ev: WellEvaluator, models, rollout_loader, H, max_trajectories=N
         raise RuntimeError("No rollout trajectories consumed.")
 
     out = {}
-    for name in models:
+    for name in series:
         bands = _bands_from_per_traj(per_traj[name])
         agg = torch.sqrt(agg_num[name] / (agg_den[name] + 1e-7))  # [T, C]
-        bands["aggregated"] = field_average(agg)
+        bands["aggregated"] = field_average(agg)                  # [T]
+        bands["aggregated_per_field"] = agg.numpy()               # [T, C]
         out[name] = bands
-    for name in base_per_traj:
-        out[name] = _bands_from_per_traj(base_per_traj[name])
     return out, viz
 
 
@@ -276,6 +280,10 @@ def write_outputs(out_dir, cfg, meta, one_step, rollout, viz, param_counts):
             "one_step_vrmse_per_field": {f: float(v) for f, v in zip(fields, one_step[name])},
             "rollout_window_vrmse_official": window_means(r["official"]),
             "rollout_window_vrmse_aggregated": window_means(r["aggregated"]),
+            "rollout_window_vrmse_aggregated_per_field": {
+                f: window_means(np.asarray(r["aggregated_per_field"], dtype=float)[:, c])
+                for c, f in enumerate(fields)
+            },
             "stability_horizon": stability_horizon(r["official"], H),
         }
     for name in ("persistence", "mean"):
@@ -326,6 +334,7 @@ def write_outputs(out_dir, cfg, meta, one_step, rollout, viz, param_counts):
             w.writerow(row)
 
     plot_vrmse_with_bands(out_dir, cfg, rollout, horizons)
+    plot_per_field_vrmse(out_dir, cfg, meta, rollout, horizons)
     if viz is not None:
         _plot_rollout_comparison(out_dir, cfg, meta, viz, H)
         make_rollout_gif(out_dir, cfg, meta, viz, H)

@@ -29,12 +29,12 @@
     "FNO": {
       "n_params": 19011716,
       "n_params_millions": 19.012,
-      "one_step_vrmse_field_avg": 11.27530288696289,
+      "one_step_vrmse_field_avg": 10.327836990356445,
       "one_step_vrmse_per_field": {
-        "buoyancy": 1.1950948238372803,
-        "pressure": 0.9520134925842285,
-        "velocity_x": 11.471992492675781,
-        "velocity_y": 31.48211097717285
+        "buoyancy": 1.2014074325561523,
+        "pressure": 0.9528324007987976,
+        "velocity_x": 10.6640625,
+        "velocity_y": 28.493045806884766
       },
       "rollout_window_vrmse_official": {
         "6:12": 45.55710983276367,
@@ -49,12 +49,12 @@
     "TFNO": {
       "n_params": 19276556,
       "n_params_millions": 19.277,
-      "one_step_vrmse_field_avg": 11.335958480834961,
+      "one_step_vrmse_field_avg": 10.479195594787598,
       "one_step_vrmse_per_field": {
-        "buoyancy": 1.1549079418182373,
-        "pressure": 0.991714596748352,
-        "velocity_x": 33.83900833129883,
-        "velocity_y": 9.35820484161377
+        "buoyancy": 1.1605197191238403,
+        "pressure": 0.9897292256355286,
+        "velocity_x": 31.16530990600586,
+        "velocity_y": 8.60122299194336
       },
       "rollout_window_vrmse_official": {
         "6:12": 60.73539733886719,
@@ -69,12 +69,12 @@
     "U-Net": {
       "n_params": 17467156,
       "n_params_millions": 17.467,
-      "one_step_vrmse_field_avg": 0.5081287622451782,
+      "one_step_vrmse_field_avg": 0.46586039662361145,
       "one_step_vrmse_per_field": {
-        "buoyancy": 0.08298418670892715,
-        "pressure": 0.03240852430462837,
-        "velocity_x": 1.2319775819778442,
-        "velocity_y": 0.6851447224617004
+        "buoyancy": 0.08092474937438965,
+        "pressure": 0.03332799673080444,
+        "velocity_x": 1.1411635875701904,
+        "velocity_y": 0.6080251932144165
       },
       "rollout_window_vrmse_official": {
         "6:12": 47.20942687988281,
@@ -89,12 +89,12 @@
     "CNextU-Net": {
       "n_params": 18575344,
       "n_params_millions": 18.575,
-      "one_step_vrmse_field_avg": 0.24466587603092194,
+      "one_step_vrmse_field_avg": 0.2244170904159546,
       "one_step_vrmse_per_field": {
-        "buoyancy": 0.06172443553805351,
-        "pressure": 0.017085010185837746,
-        "velocity_x": 0.4323379397392273,
-        "velocity_y": 0.46751612424850464
+        "buoyancy": 0.057409703731536865,
+        "pressure": 0.017674630507826805,
+        "velocity_x": 0.3974672853946686,
+        "velocity_y": 0.42511674761772156
       },
       "rollout_window_vrmse_official": {
         "6:12": 9.636756896972656,

@@ -53,11 +53,43 @@ def _viz_field(cfg, meta) -> int:
     return int(cfg.get("viz_field", meta.n_fields - 1))
 
 
+def _readable_ymax(cfg, rollout) -> float:
+    """y-axis ceiling from finite reference curves only (persistence, mean, and the
+    medians of NON-diverged models), with headroom. Never derived from diverged spikes,
+    so the towering FNO/TFNO blow-ups don't crush the readable curves. Persistence/mean
+    are always finite, so this stays well-defined even if every model diverges."""
+    refs = []
+    for ref in ("persistence", "mean"):
+        if ref in rollout:
+            refs.append(np.asarray(rollout[ref]["median"], dtype=float))
+    for e in cfg.models:
+        if np.isfinite(np.asarray(rollout[e.name]["official"], dtype=float)).all():
+            refs.append(np.asarray(rollout[e.name]["median"], dtype=float))
+    ref_max = 1.0
+    for v in refs:
+        fin = v[np.isfinite(v)]
+        if fin.size:
+            ref_max = max(ref_max, float(fin.max()))
+    return ref_max * 4.0
+
+
 def plot_vrmse_with_bands(out_dir, cfg, rollout, horizons):
-    """VRMSE-vs-horizon with per-trajectory percentile bands, slide-styled."""
+    """VRMSE-vs-horizon, slide-styled.
+
+    Solid line + shaded band = per-sample 'official' VRMSE (median, 10-90th percentile
+    over test trajectories). Thin dashed line = variance-pooled 'aggregated' VRMSE, which
+    is robust to low-spatial-variance snapshots (e.g. RB velocity at convection onset).
+
+    Diverged models (FNO/TFNO blowing up) are truncated at the first off-scale horizon and
+    marked with an X. This keeps the y-axis readable and avoids drawing the misleading
+    survivorship 'recovery' tail (the per-trajectory median descends once enough
+    trajectories overflow to inf->nan, which only reflects a shrinking surviving pool)."""
+    from matplotlib.lines import Line2D
+
     h = np.asarray(horizons)
     plt.rcParams.update({"font.size": 13})
     fig, ax = plt.subplots(figsize=(9, 5.5))
+    ymax = _readable_ymax(cfg, rollout)
 
     for idx, e in enumerate(cfg.models):
         r = rollout[e.name]
@@ -66,33 +98,92 @@ def plot_vrmse_with_bands(out_dir, cfg, rollout, horizons):
         p10 = np.asarray(r["p10"], dtype=float)
         p90 = np.asarray(r["p90"], dtype=float)
         official = np.asarray(r["official"], dtype=float)
-        m = np.isfinite(median)
-        diverged = not np.isfinite(official).all()
+        agg = np.asarray(r["aggregated"], dtype=float)
+
+        # Leading on-scale region: finite median at or below the readable ceiling.
+        on = np.isfinite(median) & (median <= ymax)
+        h_cut = len(on) if on.all() else int(np.argmin(on))  # first off-scale horizon index
+        diverged = (not np.isfinite(official).all()) or (h_cut < len(on))
+        sl = slice(0, h_cut)
         label = e.name + (" (diverged)" if diverged else "")
-        ax.plot(h[m], median[m], color=color, marker="o", ms=3, lw=2, label=label)
-        band_m = m & np.isfinite(p10) & np.isfinite(p90)
-        ax.fill_between(h[band_m], p10[band_m], p90[band_m], color=color, alpha=0.18, linewidth=0)
-        if diverged and m.any():  # mark where the model leaves the finite range
-            last = h[m][-1]
-            ax.plot([last], [median[m][-1]], color=color, marker="X", ms=10, mec="k", mew=0.6)
+        ax.plot(h[sl], median[sl], color=color, marker="o", ms=3, lw=2, label=label)
+        band_ok = np.isfinite(p10[sl]) & np.isfinite(p90[sl])
+        ax.fill_between(h[sl][band_ok], p10[sl][band_ok], p90[sl][band_ok],
+                        color=color, alpha=0.18, linewidth=0)
+        # variance-pooled aggregated curve (robust), thin dashed, clipped to scale
+        agg_on = np.isfinite(agg) & (agg <= ymax)
+        ax.plot(h[agg_on], agg[agg_on], color=color, lw=1.2, ls="--", alpha=0.9)
+        if diverged and h_cut < len(h):  # mark where the model leaves the readable scale
+            ax.plot([h[h_cut]], [ymax], color=color, marker="X", ms=11, mec="k", mew=0.6, clip_on=False)
 
     pers = np.asarray(rollout["persistence"]["median"], dtype=float)
-    mp = np.isfinite(pers)
+    mp = np.isfinite(pers) & (pers <= ymax)
     ax.plot(h[mp], pers[mp], "k--", lw=1.6, label="persistence")
 
+    ax.set_yscale("log")
+    ax.set_ylim(top=ymax)
     ax.axhline(1.0, color="gray", ls=":", lw=1.2)
-    top = ax.get_ylim()[1]
-    ax.axhspan(1.0, max(top, 1.0), color="gray", alpha=0.06)
+    ax.axhspan(1.0, ymax, color="gray", alpha=0.06)
     ax.text(h[-1], 1.0, " worse than mean predictor", color="gray", va="bottom", ha="right", fontsize=10)
 
     ax.set_xlabel("rollout horizon (steps)")
     ax.set_ylabel("VRMSE (field-averaged, physical space)")
-    ax.set_title(f"{cfg.dataset}: autoregressive rollout VRMSE\n(median, shaded 10-90th percentile over test trajectories)")
-    ax.set_yscale("log")
-    ax.legend(fontsize=11, ncol=2)
+    ax.set_title(f"{cfg.dataset}: autoregressive rollout VRMSE\n"
+                 f"(solid+band: per-sample median + 10-90th pct; dashed: variance-pooled)",
+                 fontsize=12)
+    handles, labels = ax.get_legend_handles_labels()
+    handles.append(Line2D([0], [0], color="gray", lw=1.2, ls="--"))
+    labels.append("aggregated (variance-pooled)")
+    ax.legend(handles, labels, fontsize=10, ncol=2)
     ax.grid(alpha=0.3, which="both")
     fig.tight_layout()
     fig.savefig(os.path.join(out_dir, "vrmse_vs_horizon.png"), dpi=150)
+    plt.close(fig)
+    plt.rcParams.update({"font.size": 10})
+
+
+def plot_per_field_vrmse(out_dir, cfg, meta, rollout, horizons):
+    """Per-field aggregated VRMSE-vs-horizon (small multiples, one subplot per field).
+
+    Uses the variance-pooled 'aggregated' metric (robust to low-variance snapshots), so it
+    cleanly separates which physical fields a model handles well. For Rayleigh-Benard this
+    exposes the story behind the inflated headline VRMSE: buoyancy/pressure are predicted
+    well while the velocity fields (near-zero spatial variance at convection onset) dominate
+    the error."""
+    fields = field_names_safe(meta)
+    nC = len(fields)
+    h = np.asarray(horizons)
+    ncols = min(nC, 2)
+    nrows = int(np.ceil(nC / ncols))
+    plt.rcParams.update({"font.size": 12})
+    fig, axes = plt.subplots(nrows, ncols, figsize=(6.2 * ncols, 3.6 * nrows), squeeze=False)
+    axes = axes.ravel()
+
+    pers = rollout.get("persistence", {}).get("aggregated_per_field")
+    for c in range(nC):
+        ax = axes[c]
+        for idx, e in enumerate(cfg.models):
+            agg = np.asarray(rollout[e.name]["aggregated_per_field"], dtype=float)[:, c]
+            m = np.isfinite(agg)
+            ax.plot(h[m], agg[m], color=model_color(e.name, idx), marker="o", ms=2.5, lw=1.8,
+                    label=e.name)
+        if pers is not None:
+            pv = np.asarray(pers, dtype=float)[:, c]
+            mp = np.isfinite(pv)
+            ax.plot(h[mp], pv[mp], "k--", lw=1.4, label="persistence")
+        ax.axhline(1.0, color="gray", ls=":", lw=1.0)
+        ax.set_yscale("log")
+        ax.set_title(fields[c], fontsize=12)
+        ax.set_xlabel("horizon")
+        if c % ncols == 0:
+            ax.set_ylabel("aggregated VRMSE")
+        ax.grid(alpha=0.3, which="both")
+    for j in range(nC, len(axes)):
+        axes[j].axis("off")
+    axes[0].legend(fontsize=9, ncol=2)
+    fig.suptitle(f"{cfg.dataset}: per-field aggregated rollout VRMSE", fontsize=13)
+    fig.tight_layout()
+    fig.savefig(os.path.join(out_dir, "vrmse_per_field.png"), dpi=150)
     plt.close(fig)
     plt.rcParams.update({"font.size": 10})
 
