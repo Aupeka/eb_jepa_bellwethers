@@ -104,6 +104,89 @@ class ResNet5(TemporalBatchMixin, nn.Module):
         return out
 
 
+class SpectralConv2d(nn.Module):
+    """Fourier layer: FFT -> keep low modes, complex-linear mix -> inverse FFT.
+
+    Adapted from the canonical FNO reference (Li et al., ``fourier_2d.py``) to a
+    channel-first ``[B, C, H, W]`` layout. Only the ``modes1 x modes2`` lowest
+    Fourier coefficients are mixed; higher frequencies are dropped (the spectral
+    truncation that makes FNO a resolution-invariant operator). The FFT runs in
+    float32 because ``torch.fft`` does not support half precision under autocast.
+    """
+
+    def __init__(self, in_channels, out_channels, modes1, modes2):
+        super().__init__()
+        self.modes1, self.modes2 = modes1, modes2
+        scale = 1.0 / (in_channels * out_channels)
+        self.w1 = nn.Parameter(
+            scale
+            * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat)
+        )
+        self.w2 = nn.Parameter(
+            scale
+            * torch.rand(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat)
+        )
+
+    def forward(self, x):
+        # FFT is float32-only: run in fp32 even under autocast
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            x = x.float()
+            _, _, h, w = x.shape
+            x_ft = torch.fft.rfft2(x)
+            out_ft = torch.zeros(
+                x.shape[0],
+                self.w1.shape[1],
+                h,
+                w // 2 + 1,
+                dtype=torch.cfloat,
+                device=x.device,
+            )
+            m1, m2 = self.modes1, self.modes2
+            out_ft[:, :, :m1, :m2] = torch.einsum(
+                "bixy,ioxy->boxy", x_ft[:, :, :m1, :m2], self.w1
+            )
+            out_ft[:, :, -m1:, :m2] = torch.einsum(
+                "bixy,ioxy->boxy", x_ft[:, :, -m1:, :m2], self.w2
+            )
+            return torch.fft.irfft2(out_ft, s=(h, w))
+
+
+class FNOEncoder(TemporalBatchMixin, nn.Module):
+    """Fourier Neural Operator encoder for 2D physical fields.
+
+    Maps a frame ``[B, in_d, H, W]`` -> ``[B, out_d, H, W]`` while preserving the
+    spatial resolution (a drop-in replacement for ``ResNet5`` in the Gray-Scott
+    JEPA). Supports 5D ``[B, C, T, H, W]`` inputs via ``TemporalBatchMixin``.
+
+    Architecture: a 1x1 lifting conv, ``n_layers`` Fourier blocks (each a
+    ``SpectralConv2d`` global path summed with a 1x1 pointwise path + GELU), then a
+    1x1 projection head. The FFT-based mixing assumes a periodic domain, which
+    matches the periodic boundaries of the Gray-Scott reaction-diffusion data.
+    """
+
+    def __init__(self, in_d, h_d, out_d, modes=16, n_layers=4):
+        super().__init__()
+        self.out_d = out_d
+        self.lift = nn.Conv2d(in_d, h_d, kernel_size=1)
+        self.spectral = nn.ModuleList(
+            [SpectralConv2d(h_d, h_d, modes, modes) for _ in range(n_layers)]
+        )
+        self.pointwise = nn.ModuleList(
+            [nn.Conv2d(h_d, h_d, kernel_size=1) for _ in range(n_layers)]
+        )
+        self.head = nn.Sequential(
+            nn.Conv2d(h_d, h_d, kernel_size=1),
+            nn.GELU(),
+            nn.Conv2d(h_d, out_d, kernel_size=1),
+        )
+
+    def _forward(self, x):
+        x = self.lift(x)
+        for sp, pw in zip(self.spectral, self.pointwise):
+            x = F.gelu(sp(x) + pw(x))
+        return self.head(x)
+
+
 class SimplePredictor(nn.Module):
     """Wrapper that concatenates states and actions channel-wise before prediction."""
 

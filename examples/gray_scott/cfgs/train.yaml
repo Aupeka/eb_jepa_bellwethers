@@ -14,8 +14,11 @@ data:
   num_workers: 16
 model:
   dobs: 2               # two chemical fields A, B (encoder in_d)
+  encoder: resnet5      # encoder backbone: resnet5 | fno
   henc: 32              # encoder hidden width
   dstc: 16              # latent dim D (encoder out_d)
+  fno_modes: 16         # FNO: number of low Fourier modes kept per axis (encoder=fno)
+  fno_layers: 4         # FNO: number of Fourier blocks (encoder=fno)
   hpre: 32              # predictor (ResUNet) hidden width
   steps: 4              # JEPA prediction steps (context_length=2)
   # TODO: add any extra hyperparameters your encoder / JEPA assembly need

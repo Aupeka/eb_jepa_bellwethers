@@ -47,9 +47,21 @@ def build_encoder(cfg):
     Hints: ``eb_jepa.architectures.ResNet5(in_d=2, h_d=henc, out_d=dstc)`` is the
     drop-in choice — stride-1 / no avg-pool keeps the latent at full ``h=w=128``
     resolution (so a decoder can later map it back to a field). ``ImpalaEncoder``
-    is the heavier alternative. Expose ``out_d`` (= D = dstc) for downstream use."""
-    # TODO Unet or IMPALA
-    return architectures.ResNet5(in_d=2, h_d=cfg.henc, out_d=cfg.dstc)
+    is the heavier alternative. Expose ``out_d`` (= D = dstc) for downstream use.
+
+    Set ``cfg.encoder: fno`` to use the Fourier Neural Operator encoder
+    (``FNOEncoder``) instead — a resolution-preserving, periodic-domain operator
+    well suited to PDE fields. ``cfg.fno_modes`` / ``cfg.fno_layers`` tune it."""
+    in_d = cfg.get("dobs", 2)
+    if cfg.get("encoder", "resnet5") == "fno":
+        return architectures.FNOEncoder(
+            in_d=in_d,
+            h_d=cfg.henc,
+            out_d=cfg.dstc,
+            modes=cfg.get("fno_modes", 16),
+            n_layers=cfg.get("fno_layers", 4),
+        )
+    return architectures.ResNet5(in_d=in_d, h_d=cfg.henc, out_d=cfg.dstc)
 
 
 # --------------------------------------------------------------------------- #
