@@ -117,9 +117,9 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
     os.makedirs(ckpt_dir, exist_ok=True)
     gstep = 0
     
-    best_val_loss = float('inf')
+    best_val_pred_loss = float('inf')
     epochs_without_improvement = 0
-    patience = cfg.training.get("early_stopping_patience", 5) if hasattr(cfg, "training") else 5
+    patience = 3
     
     for epoch in range(cfg.optim.epochs):
         jepa.train()
@@ -141,16 +141,17 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
                       f"vc={regl.item():.4f} pred={pl.item():.4f}", flush=True)
 
         # val
-        jepa.eval(); vl = 0.0; nb = 0
+        jepa.eval(); vl = 0.0; vp = 0.0; nb = 0
         with torch.no_grad():
             for batch in val_loader:
                 x = batch["video"].to(device)
                 with torch.amp.autocast(device.type, enabled=use_amp, dtype=amp_dtype):
-                    _, (jl, _, _, _, _) = jepa.unroll(x, actions=None, nsteps=cfg.model.steps,
+                    _, (jl, _, _, _, pl) = jepa.unroll(x, actions=None, nsteps=cfg.model.steps,
                                                       unroll_mode="parallel", compute_loss=True)
-                vl += jl.item(); nb += 1
+                vl += jl.item(); vp += pl.item(); nb += 1
         val_loss = vl / max(nb, 1)
-        print(f"[epoch {epoch}] {time.time() - t0:.0f}s | val_loss={val_loss:.4f}", flush=True)
+        val_pred_loss = vp / max(nb, 1)
+        print(f"[epoch {epoch}] {time.time() - t0:.0f}s | val_loss={val_loss:.4f} val_pred={val_pred_loss:.4f}", flush=True)
         
         # Save latest checkpoint
         torch.save({"epoch": epoch,
@@ -160,8 +161,8 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
                    os.path.join(ckpt_dir, "latest.pth.tar"))
                    
         # Early stopping logic
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
+        if val_pred_loss < best_val_pred_loss:
+            best_val_pred_loss = val_pred_loss
             epochs_without_improvement = 0
             # Save best checkpoint
             torch.save({"epoch": epoch,
@@ -172,11 +173,11 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
         else:
             epochs_without_improvement += 1
             if epochs_without_improvement >= patience:
-                print(f"[gs] Early stopping triggered! No improvement for {patience} epochs.", flush=True)
+                print(f"[gs] Early stopping triggered! No improvement in pred-loss for {patience} epochs.", flush=True)
                 break
 
     print(f"[gs] done -> {ckpt_dir}/latest.pth.tar and best.pth.tar", flush=True)
-    return best_val_loss
+    return best_val_pred_loss
 
 
 if __name__ == "__main__":

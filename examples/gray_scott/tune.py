@@ -11,6 +11,30 @@ except ImportError:
 
 from examples.gray_scott.main import run
 
+class Tee(object):
+    def __init__(self, *files):
+        self.files = files
+    def write(self, obj):
+        for f in self.files:
+            f.write(obj)
+            f.flush()
+    def flush(self):
+        for f in self.files:
+            f.flush()
+
+import io
+import sys
+import re
+
+class CaptureStdoutAndPrint:
+    def __enter__(self):
+        self._original_stdout = sys.stdout
+        self._stringio = io.StringIO()
+        sys.stdout = Tee(self._original_stdout, self._stringio)
+        return self._stringio
+    def __exit__(self, *args):
+        sys.stdout = self._original_stdout
+
 def objective(trial, base_cfg_path, short_run_epochs):
     # Suggest hyperparameters
     # Most importantly: VICReg parameters (VCLoss variance and covariance terms)
@@ -47,10 +71,23 @@ def objective(trial, base_cfg_path, short_run_epochs):
     print(f"Hyperparameters: std_coeff={std_coeff:.2f}, cov_coeff={cov_coeff:.2f}, lr={lr:.1e}, dstc={dstc}, henc={henc}, hpre={hpre}")
     print("="*40)
     
-    # Run the training pipeline and get the best validation loss
-    best_val_loss = run(cfg=cfg, folder=trial_folder)
+    # Run the training pipeline and capture output
+    with CaptureStdoutAndPrint() as captured:
+        best_val_loss = run(cfg=cfg, folder=trial_folder)
     
-    return best_val_loss
+    # If run() successfully returned a float (because main.py was updated), use it
+    if best_val_loss is not None:
+        return best_val_loss
+        
+    # If run() returned None, fallback to parsing the standard output
+    out_str = captured.getvalue()
+    losses = re.findall(r"val_loss=([0-9.]+)", out_str)
+    if losses:
+        fallback_loss = min(float(l) for l in losses)
+        print(f"[fallback] Parsed best validation loss from stdout: {fallback_loss}")
+        return fallback_loss
+        
+    raise ValueError("run() returned None and no validation losses were printed.")
 
 def main():
     parser = argparse.ArgumentParser(description="Hyperparameter tuning for Gray-Scott temporal-JEPA")
