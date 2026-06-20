@@ -49,11 +49,13 @@ def _hidx(arr, h):
 
 
 def _build_final_cfg(base_cfg_path, combo, best_params, final_epochs, ckpt_dir,
-                     use_wandb, wandb_project):
+                     use_wandb, wandb_project, batch_size=None):
     cfg = OmegaConf.load(base_cfg_path)
     cfg.optim.epochs = final_epochs
     cfg.model.steps = int(combo["K"])
     cfg.loss.regularizer = combo["regularizer"]
+    if batch_size is not None:
+        cfg.data.batch_size = batch_size
     if best_params:
         cfg = OmegaConf.merge(cfg, OmegaConf.from_dotlist(
             [f"{k}={v}" for k, v in best_params.items()]))
@@ -79,12 +81,13 @@ def run_combo(combo, args):
         args.fname, combo, n_trials=args.n_trials, short_run_epochs=args.short_run_epochs,
         study_name=combo["name"], param_cap_m=args.param_cap_m,
         out_root=os.path.join(out, "tune"),
-        wandb_trials=args.wandb_trials, wandb_project=args.wandb_project)
+        wandb_trials=args.wandb_trials, wandb_project=args.wandb_project,
+        batch_size=args.batch_size)
     print(f"[{combo['name']}] best optuna val_pred={best_value:.4f} params={best_params}", flush=True)
 
     # 2) Final training on the best config
     final_cfg = _build_final_cfg(args.fname, combo, best_params, args.final_epochs,
-                                 ckpt_dir, args.wandb, args.wandb_project)
+                                 ckpt_dir, args.wandb, args.wandb_project, args.batch_size)
     OmegaConf.save(final_cfg, os.path.join(out, "best_config.yaml"))
     final_val = run(cfg=final_cfg, folder=ckpt_dir)
 
@@ -165,6 +168,8 @@ def main():
     p.add_argument("--final_epochs", type=int, default=20, help="epochs for the final model")
     p.add_argument("--H", type=int, default=30, help="evaluation rollout horizon")
     p.add_argument("--param_cap_m", type=float, default=10.0, help="param budget cap (millions)")
+    p.add_argument("--batch_size", type=int, default=None,
+                   help="override data.batch_size (lower to fit GPU memory; default uses train.yaml)")
     p.add_argument("--combos", nargs="*", default=None,
                    help="subset of combo names to run (default: all 8)")
     p.add_argument("--wandb", action="store_true", help="log final training runs + summary to W&B")

@@ -44,13 +44,16 @@ def _count_params(cfg):
 
 
 def objective(trial, base_cfg_path, short_run_epochs, combo=None, param_cap_m=None,
-              out_root=None, wandb_trials=False, wandb_project=None):
+              out_root=None, wandb_trials=False, wandb_project=None, batch_size=None):
     """One Optuna trial. ``combo`` (optional) pins the ablation axes
     ``{"K": int, "regularizer": "vicreg"|"sigreg", "encoder": "resnet5"}``; the
     regularizer-specific coefficients are swept accordingly. Trials whose model exceeds
-    ``param_cap_m`` million parameters are pruned before any training."""
+    ``param_cap_m`` million parameters are pruned before any training. ``batch_size``
+    overrides ``data.batch_size`` (use to fit GPU memory)."""
     cfg = OmegaConf.load(base_cfg_path)
     cfg.optim.epochs = short_run_epochs
+    if batch_size is not None:
+        cfg.data.batch_size = batch_size
 
     # --- ablation axes (pinned by the combo, not searched) ---
     regularizer = (combo or {}).get("regularizer", cfg.loss.get("regularizer", "vicreg"))
@@ -121,7 +124,8 @@ def objective(trial, base_cfg_path, short_run_epochs, combo=None, param_cap_m=No
 
 
 def run_study(base_cfg_path, combo, n_trials, short_run_epochs, study_name,
-              param_cap_m=None, out_root=None, wandb_trials=False, wandb_project=None):
+              param_cap_m=None, out_root=None, wandb_trials=False, wandb_project=None,
+              batch_size=None):
     """Run one Optuna study for a single ablation combo. Returns
     ``(best_params: dict, best_value: float)``; if every trial was pruned (e.g. cap too
     low), returns ``({}, inf)`` instead of raising."""
@@ -129,7 +133,8 @@ def run_study(base_cfg_path, combo, n_trials, short_run_epochs, study_name,
     study.optimize(
         lambda trial: objective(trial, base_cfg_path, short_run_epochs, combo=combo,
                                 param_cap_m=param_cap_m, out_root=out_root,
-                                wandb_trials=wandb_trials, wandb_project=wandb_project),
+                                wandb_trials=wandb_trials, wandb_project=wandb_project,
+                                batch_size=batch_size),
         n_trials=n_trials)
     try:
         return dict(study.best_trial.params), float(study.best_trial.value)
