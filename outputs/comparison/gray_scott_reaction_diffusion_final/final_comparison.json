@@ -1,0 +1,63 @@
+{
+  "dataset": "gray_scott_reaction_diffusion",
+  "metric": "official",
+  "poseidon_model": "Poseidon-FT",
+  "table": [
+    {
+      "model": "FNO",
+      "params_M": 19.009,
+      "vrmse_h1": 1.39483,
+      "vrmse_h10": 78649.421875,
+      "vrmse_h30": Infinity,
+      "stability_horizon": 0
+    },
+    {
+      "model": "TFNO",
+      "params_M": 19.274,
+      "vrmse_h1": 23.70244,
+      "vrmse_h10": 91120801415168.0,
+      "vrmse_h30": NaN,
+      "stability_horizon": 0
+    },
+    {
+      "model": "U-Net",
+      "params_M": 17.464,
+      "vrmse_h1": 0.023243,
+      "vrmse_h10": 0.665961,
+      "vrmse_h30": 35.204899,
+      "stability_horizon": 11
+    },
+    {
+      "model": "CNextU-Net",
+      "params_M": 18.572,
+      "vrmse_h1": 0.039166,
+      "vrmse_h10": 0.329706,
+      "vrmse_h30": 4.482634,
+      "stability_horizon": 18
+    },
+    {
+      "model": "Poseidon-FT",
+      "params_M": null,
+      "vrmse_h1": 0.199735,
+      "vrmse_h10": 1.093283,
+      "vrmse_h30": 7.583626,
+      "stability_horizon": 9
+    },
+    {
+      "model": "persistence",
+      "params_M": 0.0,
+      "vrmse_h1": 0.31152,
+      "vrmse_h10": 2.677487,
+      "vrmse_h30": 49.425308,
+      "stability_horizon": 3
+    },
+    {
+      "model": "mean",
+      "params_M": 0.0,
+      "vrmse_h1": 1.007413,
+      "vrmse_h10": 1.717532,
+      "vrmse_h30": 38.50312,
+      "stability_horizon": 0
+    }
+  ]
+}

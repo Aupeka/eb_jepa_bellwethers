@@ -441,3 +441,48 @@ class SIGReg(nn.Module):
         sigreg = epps_pulley(view, n_points=self.n_points).mean()
         loss = self.sigreg_coeff * sigreg
         return loss, sigreg.detach(), {"sigreg_loss": sigreg.item()}
+
+
+class SpectralGaussReg(nn.Module):
+    """Spectral-domain Gaussianity anti-collapse (drop-in for VCLoss/SIGReg).
+
+    Pushes the encoder latent toward a Gaussian distribution in the FREQUENCY domain:
+    takes the spatial latent, applies ``rfft2``, keeps the low-frequency band (``n_modes``),
+    concatenates real+imag coefficients into a feature vector, and applies the Epps-Pulley
+    Gaussianity statistic over random 1-D projections (as in ``SIGReg``).
+
+    The latent ``[B, D, T, H, W]`` is folded to ``[B*T, D, H, W]`` before the FFT. The
+    low-mode truncation is a deliberate memory bound: the full ``rfft2`` grid would give
+    ~``2*D*H*(W//2+1)`` features (hundreds of thousands), so the random-slice matrix is kept
+    small by testing only the retained ``n_modes`` band (the same band a TFNO acts on).
+
+    Single hyperparameter ``lambda_spectral``. Matches the ``(loss, unweighted, dict)``
+    signature and exposes ``.proj`` (shared with ``SquareLossSeq``)."""
+
+    def __init__(self, lambda_spectral, n_modes=(16, 16), num_slices=256, n_points=17, proj=None):
+        super().__init__()
+        self.lambda_spectral = lambda_spectral
+        self.n_modes = n_modes
+        self.num_slices = num_slices
+        self.n_points = n_points
+        self.proj = nn.Identity() if proj is None else proj
+        self.step = 0
+
+    def forward(self, x, actions=None):
+        b, d, t, h, w = x.shape
+        z = x.permute(0, 2, 1, 3, 4).reshape(b * t, d, h, w)  # [N, D, H, W]
+        z_freq = torch.fft.rfft2(z.float(), norm="ortho")     # [N, D, H, W//2+1] complex
+        kh, kw = self.n_modes
+        band = z_freq[:, :, :kh, :kw]                          # low-frequency band (memory-bounded)
+        feat = torch.cat([band.real, band.imag], dim=1).reshape(b * t, -1)  # [N, 2*D*kh*kw]
+        with torch.no_grad():
+            g = torch.Generator(device=feat.device)
+            g.manual_seed(self.step)
+            A = torch.randn(feat.shape[1], self.num_slices, device=feat.device, generator=g)
+            A = A / A.norm(p=2, dim=0, keepdim=True)
+        self.step += 1
+        view = feat @ A  # [N, num_slices]
+        view = (view - view.mean(0, keepdim=True)) / (view.std(0, keepdim=True) + 1e-6)
+        spectral = epps_pulley(view, n_points=self.n_points).mean()
+        loss = self.lambda_spectral * spectral
+        return loss, spectral.detach(), {"spectral_loss": spectral.item()}

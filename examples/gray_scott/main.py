@@ -231,11 +231,14 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
             best_val_pred_loss = val_pred_loss
             epochs_without_improvement = 0
             # Save best checkpoint
-            torch.save({"epoch": epoch,
-                        "encoder": encoder.state_dict(),
-                        "jepa": jepa.state_dict(),
-                        "cfg": OmegaConf.to_container(cfg, resolve=True)},
-                       os.path.join(ckpt_dir, "best.pth.tar"))
+            checkpoint_data = {
+                "epoch": epoch,
+                "encoder": encoder.state_dict(),
+                "jepa": jepa.state_dict(),
+                "cfg": OmegaConf.to_container(cfg, resolve=True)
+            }
+            torch.save(checkpoint_data, os.path.join(ckpt_dir, "best.pth.tar"))
+            torch.save(checkpoint_data, os.path.join(ckpt_dir, f"best_epoch_{epoch}.pth.tar"))
         else:
             epochs_without_improvement += 1
             if epochs_without_improvement >= patience:

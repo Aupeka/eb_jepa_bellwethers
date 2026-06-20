@@ -186,6 +186,32 @@ class FNOEncoder(TemporalBatchMixin, nn.Module):
             x = F.gelu(sp(x) + pw(x))
         return self.head(x)
 
+class TFNOEncoder(TemporalBatchMixin, nn.Module):
+    """Fourier-operator frame encoder (drop-in for ResNet5).
+
+    Thin wrapper around ``neuralop.models.TFNO``: maps a frame ``[B, in_d, H, W]`` to a
+    latent ``[B, out_d, H, W]`` at full resolution (neuralop's FNO/TFNO preserve the grid),
+    and the 5D clip ``[B, in_d, T, H, W]`` via ``TemporalBatchMixin``. Exposes ``out_d``."""
+
+    def __init__(self, in_d, h_d, out_d, n_modes=(16, 16)):
+        super().__init__()
+        try:
+            from neuralop.models import TFNO
+        except ImportError as e:
+            raise ImportError(
+                "TFNOEncoder needs neuraloperator (imports as `neuralop`): "
+                "uv pip install neuraloperator") from e
+        self.tfno = TFNO(n_modes=n_modes, hidden_channels=h_d,
+                         in_channels=in_d, out_channels=out_d)
+        self.out_d = out_d
+
+    def _forward(self, x):
+        out = self.tfno(x)
+        if out.shape[-2:] != x.shape[-2:]:  # safety net; neuralop TFNO normally keeps the grid
+            out = F.interpolate(out, size=x.shape[-2:], mode="bilinear", align_corners=False)
+        return out
+
+
 
 class SimplePredictor(nn.Module):
     """Wrapper that concatenates states and actions channel-wise before prediction."""
