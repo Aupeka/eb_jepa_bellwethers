@@ -49,6 +49,74 @@ def stability_horizon(v, H: int) -> int:
     return int(k)
 
 
+# FNO/TFNO often blow up to inf/nan; never let them set the y-scale on comparison slides.
+_SPECTRAL_OPS = frozenset({"FNO", "TFNO"})
+
+
+def comparison_ymax(horizons, curves_by_name, *, exclude=_SPECTRAL_OPS,
+                    h_ref=20, headroom=2.2, floor=1.0, cap=80.0):
+    """Readable log-y ceiling for ``comparison/`` and ``final_plot`` figures.
+
+  FNO/TFNO are excluded from the reference pool so their exponential blow-ups do not
+  squash U-Net / CNextU-Net / Poseidon / JEPA.  Persistence and mean only contribute
+  through ``h_ref`` so a late persistence ramp (e.g. gray_scott h30 ~ 49) does not
+  open room for a long FNO diagonal."""
+    h = np.asarray(horizons, dtype=float)
+    hi = np.ones(len(h), dtype=bool) if h_ref is None else (h <= float(h_ref))
+    ref_max = float(floor)
+    for name, curve in curves_by_name.items():
+        if name in exclude:
+            continue
+        v = np.asarray(curve, dtype=float)[hi]
+        fin = v[np.isfinite(v)]
+        if fin.size:
+            ref_max = max(ref_max, float(fin.max()))
+    return min(float(cap), ref_max * float(headroom))
+
+
+def truncate_curve_for_display(curve, ymax):
+    """Leading on-scale segment for one VRMSE curve; mark divergence past ``ymax``."""
+    curve = np.asarray(curve, dtype=float)
+    on = np.isfinite(curve) & (curve <= ymax)
+    if on.all():
+        return len(on), False
+    h_cut = int(np.argmin(on))
+    diverged = (not np.isfinite(curve).all()) or h_cut < len(curve)
+    return h_cut, diverged
+
+
+def plot_comparison_curve(ax, horizons, curve, *, name, color, ymax, lw=2.0, zorder=3):
+    """Plot one model curve, truncating at ``ymax`` and marking divergence with an X."""
+    h = np.asarray(horizons, dtype=float)
+    curve = np.asarray(curve, dtype=float)
+    h_cut, diverged = truncate_curve_for_display(curve, ymax)
+    label = name + (" (diverged)" if diverged else "")
+    sl = slice(0, h_cut)
+    if h_cut > 0:
+        ax.plot(h[sl], curve[sl], color=color, marker="o", ms=3, lw=lw, label=label, zorder=zorder)
+    elif diverged:
+        ax.plot([], [], color=color, marker="o", ms=3, lw=lw, label=label, zorder=zorder)
+    if diverged and h_cut < len(h):
+        xh = h[h_cut] if h_cut < len(h) else h[-1]
+        ax.plot([xh], [ymax], color=color, marker="X", ms=12, mec="k", mew=0.6, clip_on=False, zorder=zorder)
+    return diverged
+
+
+def plot_reference_curves(ax, horizons, curves_by_name, ymax):
+    """Persistence and mean baselines, clipped to the readable y-range."""
+    h = np.asarray(horizons, dtype=float)
+    if "persistence" in curves_by_name:
+        pers = np.asarray(curves_by_name["persistence"], dtype=float)
+        mp = np.isfinite(pers) & (pers <= ymax)
+        if mp.any():
+            ax.plot(h[mp], pers[mp], "k--", lw=1.6, label="persistence")
+    if "mean" in curves_by_name:
+        mn = np.asarray(curves_by_name["mean"], dtype=float)
+        mm = np.isfinite(mn) & (mn <= ymax)
+        if mm.any():
+            ax.plot(h[mm], mn[mm], color="0.4", ls=":", lw=1.6, label="mean predictor")
+
+
 def _viz_field(cfg, meta) -> int:
     return int(cfg.get("viz_field", meta.n_fields - 1))
 

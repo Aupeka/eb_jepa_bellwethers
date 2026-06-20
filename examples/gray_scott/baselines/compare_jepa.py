@@ -29,6 +29,14 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from examples.gray_scott.baselines.viz import (
+    comparison_ymax,
+    model_color,
+    plot_comparison_curve,
+    plot_reference_curves,
+    truncate_curve_for_display,
+)
+
 BASELINE_MODELS = ["FNO", "TFNO", "U-Net", "CNextU-Net"]
 
 
@@ -95,34 +103,51 @@ def main():
 
     os.makedirs(args.out_dir, exist_ok=True)
     b_h, b_cols, b_params, b_stab, b_metric = load_baselines(args.baselines_dir)
+    h = np.asarray(b_h, dtype=float)
     summary = json.load(open(args.ablation_summary))
     combos = summary["combos"]
     best = select_best(combos, args.select)
-    j_h = best["horizons"]
+    j_h = np.asarray(best["horizons"], dtype=float)
     j_curve = np.asarray(best["curves"]["jepa"], dtype=float)
-    pers = b_cols.get("persistence")
+    jepa_name = f"JEPA ({best['combo']})"
+
+    all_curves = dict(b_cols)
+    all_curves[jepa_name] = j_curve
+    ymax = comparison_ymax(h, all_curves)
 
     # ---- figure ----
+    plt.rcParams.update({"font.size": 13})
     fig, ax = plt.subplots(figsize=(9, 6))
-    colors = {"FNO": "#1f77b4", "TFNO": "#ff7f0e", "U-Net": "#2ca02c", "CNextU-Net": "#9467bd"}
-    for name in BASELINE_MODELS:
+    for idx, name in enumerate(BASELINE_MODELS):
         if name in b_cols:
-            ax.plot(b_h, b_cols[name], color=colors[name], lw=2, label=name)
-    if pers is not None:
-        ax.plot(b_h, pers, color="black", lw=1.5, ls="--", label="persistence")
+            plot_comparison_curve(
+                ax, h, b_cols[name], name=name, color=model_color(name, idx),
+                ymax=ymax, lw=2.0)
 
     # other JEPA combos, faint (shows the K / regularizer sweep without clutter)
     for name, m in combos.items():
         if name == best["combo"]:
             continue
-        ax.plot(m["horizons"], np.asarray(m["curves"]["jepa"], dtype=float),
-                color="0.7", lw=1.0, alpha=0.6, zorder=1)
-    ax.plot([], [], color="0.7", lw=1.0, label="other JEPA combos")
-    ax.plot(j_h, j_curve, color="#d62728", lw=3.0, zorder=5,
-            label=f"JEPA (best: {best['combo']}, {best['param_count_m']:.2f}M)")
+        jc = np.asarray(m["curves"]["jepa"], dtype=float)
+        jx = np.asarray(m["horizons"], dtype=float)
+        h_cut, _ = truncate_curve_for_display(jc, ymax)
+        if h_cut > 0:
+            ax.plot(jx[:h_cut], jc[:h_cut], color="0.7", lw=1.0, alpha=0.6, zorder=1)
+    if len(combos) > 1:
+        ax.plot([], [], color="0.7", lw=1.0, label="other JEPA combos")
+
+    plot_comparison_curve(
+        ax, j_h, j_curve, name=f"{jepa_name}, {best['param_count_m']:.2f}M",
+        color="#d62728", ymax=ymax, lw=3.0, zorder=5)
+
+    plot_reference_curves(ax, h, b_cols, ymax)
 
     ax.axhline(1.0, color="gray", ls=":", lw=1.0)
     ax.set_yscale("log")
+    ax.set_ylim(top=ymax)
+    ax.axhspan(1.0, ymax, color="gray", alpha=0.06)
+    ax.text(h[-1], 1.0, " worse than mean predictor", color="gray",
+            va="bottom", ha="right", fontsize=10)
     ax.set_xlabel("autoregressive horizon", fontsize=13)
     ax.set_ylabel("field-space VRMSE (log)", fontsize=13)
     ax.set_title(f"{args.dataset}: JEPA vs Well baselines\n"
@@ -135,9 +160,9 @@ def main():
     plt.close(fig)
 
     # ---- table (csv + json) ----
-    def at(curve, horizons, h):
+    def at(curve, horizons, hi):
         c = np.asarray(curve, dtype=float)
-        return float(c[min(h, len(c)) - 1]) if h <= len(c) else float("nan")
+        return float(c[min(hi, len(c)) - 1]) if hi <= len(c) else float("nan")
 
     table = []
     for name in BASELINE_MODELS:
@@ -149,6 +174,7 @@ def main():
                       "vrmse_h10": at(b_cols[name], b_h, 10),
                       "vrmse_h30": at(b_cols[name], b_h, 30),
                       "stability_horizon": b_stab.get(name, _stability_horizon(b_cols[name], b_h))})
+    pers = b_cols.get("persistence")
     if pers is not None:
         table.append({"model": "persistence", "type": "baseline", "params_M": 0.0,
                       "vrmse_h1": at(pers, b_h, 1), "vrmse_h10": at(pers, b_h, 10),

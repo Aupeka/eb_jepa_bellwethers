@@ -34,7 +34,14 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.gray_scott.baselines.viz import model_color, stability_horizon
+from examples.gray_scott.baselines.viz import (
+    comparison_ymax,
+    model_color,
+    plot_comparison_curve,
+    plot_reference_curves,
+    stability_horizon,
+    truncate_curve_for_display,
+)
 
 BASELINE_MODELS = ["FNO", "TFNO", "U-Net", "CNextU-Net"]
 _CSV = {"official": "per_model_rollout_vrmse.csv",
@@ -78,14 +85,6 @@ def _color(name, idx):
     if "jepa" in n:
         return "#8c564b"
     return model_color(name, idx)
-
-
-def _diverged_slice(curve, ymax):
-    """Leading on-scale region (finite and <= ymax); returns (slice_end, diverged)."""
-    on = np.isfinite(curve) & (curve <= ymax)
-    h_cut = len(on) if on.all() else int(np.argmin(on))
-    diverged = (not np.isfinite(curve).all()) or (h_cut < len(on))
-    return h_cut, diverged
 
 
 def _at(curve, horizons, h):
@@ -143,21 +142,13 @@ def main():
             jepa_h = np.asarray(best["horizons"], dtype=float)
             jepa_params = best.get("param_count_m")
 
-    # ---- readable y-ceiling from finite reference curves only ----
-    refs = [b_cols[k] for k in ("persistence", "mean") if k in b_cols]
-    for name in BASELINE_MODELS:
-        if name in b_cols and np.isfinite(b_cols[name]).all():
-            refs.append(b_cols[name])
-    if pose_curve is not None and np.isfinite(pose_curve).all():
-        refs.append(pose_curve)
-    if jepa_curve is not None and np.isfinite(jepa_curve).all():
-        refs.append(jepa_curve)
-    ref_max = 1.0
-    for v in refs:
-        fin = v[np.isfinite(v)]
-        if fin.size:
-            ref_max = max(ref_max, float(fin.max()))
-    ymax = ref_max * 4.0
+    # ---- readable y-ceiling (FNO/TFNO excluded; early horizons only) ----
+    all_curves = dict(b_cols)
+    if pose_curve is not None:
+        all_curves[pose_name] = pose_curve
+    if jepa_curve is not None:
+        all_curves[jepa_name] = jepa_curve
+    ymax = comparison_ymax(h, all_curves)
 
     # ---- figure ----
     plt.rcParams.update({"font.size": 14})
@@ -171,34 +162,24 @@ def main():
 
     for idx, (name, curve) in enumerate(plot_models):
         xh = jepa_h if (jepa_curve is not None and name == jepa_name) else h
-        color = _color(name, idx)
-        h_cut, diverged = _diverged_slice(curve, ymax)
-        sl = slice(0, h_cut)
         is_jepa = name == jepa_name
-        lw = 3.0 if is_jepa else 2.0
-        label = name + (" (diverged)" if diverged else "")
-        ax.plot(xh[sl], curve[sl], color=color, marker="o", ms=3, lw=lw, label=label,
-                zorder=5 if is_jepa else 3)
-        if diverged and h_cut < len(xh):
-            ax.plot([xh[h_cut]], [ymax], color=color, marker="X", ms=12, mec="k", mew=0.6, clip_on=False)
+        plot_comparison_curve(
+            ax, xh, curve, name=name, color=_color(name, idx), ymax=ymax,
+            lw=3.0 if is_jepa else 2.0, zorder=5 if is_jepa else 3)
 
     # faint sweep of the other JEPA combos for context
     for cname, m in jepa_combos.items():
         if jepa_name and cname in jepa_name:
             continue
-        ax.plot(m["horizons"], np.asarray(m["curves"]["jepa"], dtype=float),
-                color="0.75", lw=1.0, alpha=0.6, zorder=1)
+        jc = np.asarray(m["curves"]["jepa"], dtype=float)
+        jx = np.asarray(m["horizons"], dtype=float)
+        h_cut, _ = truncate_curve_for_display(jc, ymax)
+        if h_cut > 0:
+            ax.plot(jx[:h_cut], jc[:h_cut], color="0.75", lw=1.0, alpha=0.6, zorder=1)
     if jepa_combos and len(jepa_combos) > 1:
         ax.plot([], [], color="0.75", lw=1.0, label="other JEPA combos")
 
-    if "persistence" in b_cols:
-        pers = b_cols["persistence"]
-        mp = np.isfinite(pers) & (pers <= ymax)
-        ax.plot(h[mp], pers[mp], "k--", lw=1.6, label="persistence")
-    if "mean" in b_cols:
-        mn = b_cols["mean"]
-        mm = np.isfinite(mn) & (mn <= ymax)
-        ax.plot(h[mm], mn[mm], color="0.4", ls=":", lw=1.6, label="mean predictor")
+    plot_reference_curves(ax, h, b_cols, ymax)
 
     ax.set_yscale("log")
     ax.set_ylim(top=ymax)
