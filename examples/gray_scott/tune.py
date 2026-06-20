@@ -69,8 +69,8 @@ def objective(trial, base_cfg_path, short_run_epochs, combo=None, param_cap_m=No
 
     # --- regularizer-specific search space ---
     if regularizer == "vicreg":
-        cfg.loss.std_coeff = trial.suggest_float("loss.std_coeff", 1.0, 100.0, log=True)
-        cfg.loss.cov_coeff = trial.suggest_float("loss.cov_coeff", 1.0, 500.0, log=True)
+        #cfg.loss.std_coeff = trial.suggest_float("loss.std_coeff", 1.0, 100.0, log=True)
+        #cfg.loss.cov_coeff = trial.suggest_float("loss.cov_coeff", 1.0, 500.0, log=True)
         hp = f"std={cfg.loss.std_coeff:.2f} cov={cfg.loss.cov_coeff:.2f}"
     elif regularizer == "sigreg":
         cfg.loss.sigreg_coeff = trial.suggest_float("loss.sigreg_coeff", 1.0, 100.0, log=True)
