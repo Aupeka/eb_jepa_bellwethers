@@ -16,7 +16,8 @@
         30
       ]
     },
-    "vrmse": "official per-sample the_well.benchmark.metrics.VRMSE; 'aggregated' = sqrt(sum MSE / sum var)"
+    "vrmse": "official per-sample the_well.benchmark.metrics.VRMSE; 'aggregated' = sqrt(sum MSE / sum var)",
+    "bands": "per-trajectory spread (median + 10-90th percentile) from a single full-test pass"
   },
   "fields": [
     "buoyancy",
@@ -26,84 +27,98 @@
   ],
   "models": {
     "FNO": {
-      "one_step_vrmse_field_avg": 10.327836990356445,
+      "n_params": 19011716,
+      "n_params_millions": 19.012,
+      "one_step_vrmse_field_avg": 11.27530288696289,
       "one_step_vrmse_per_field": {
-        "buoyancy": 1.2014074325561523,
-        "pressure": 0.9528324007987976,
-        "velocity_x": 10.6640625,
-        "velocity_y": 28.493045806884766
+        "buoyancy": 1.1950948238372803,
+        "pressure": 0.9520134925842285,
+        "velocity_x": 11.471992492675781,
+        "velocity_y": 31.48211097717285
       },
       "rollout_window_vrmse_official": {
-        "6:12": 45.55710220336914,
+        "6:12": 45.55710983276367,
         "13:30": 24.03385353088379
       },
       "rollout_window_vrmse_aggregated": {
         "6:12": 32.20742416381836,
-        "13:30": 2.524318218231201
-      }
+        "13:30": 2.524317979812622
+      },
+      "stability_horizon": 0
     },
     "TFNO": {
-      "one_step_vrmse_field_avg": 10.479195594787598,
+      "n_params": 19276556,
+      "n_params_millions": 19.277,
+      "one_step_vrmse_field_avg": 11.335958480834961,
       "one_step_vrmse_per_field": {
-        "buoyancy": 1.1605197191238403,
-        "pressure": 0.9897292256355286,
-        "velocity_x": 31.16530990600586,
-        "velocity_y": 8.60122299194336
+        "buoyancy": 1.1549079418182373,
+        "pressure": 0.991714596748352,
+        "velocity_x": 33.83900833129883,
+        "velocity_y": 9.35820484161377
       },
       "rollout_window_vrmse_official": {
-        "6:12": 60.735382080078125,
+        "6:12": 60.73539733886719,
         "13:30": 35.00863265991211
       },
       "rollout_window_vrmse_aggregated": {
-        "6:12": 54.31378173828125,
-        "13:30": 3.3201019763946533
-      }
+        "6:12": 54.31379318237305,
+        "13:30": 3.320101737976074
+      },
+      "stability_horizon": 0
     },
     "U-Net": {
-      "one_step_vrmse_field_avg": 0.46586039662361145,
+      "n_params": 17467156,
+      "n_params_millions": 17.467,
+      "one_step_vrmse_field_avg": 0.5081287622451782,
       "one_step_vrmse_per_field": {
-        "buoyancy": 0.08092474937438965,
-        "pressure": 0.03332799673080444,
-        "velocity_x": 1.1411635875701904,
-        "velocity_y": 0.6080251932144165
+        "buoyancy": 0.08298418670892715,
+        "pressure": 0.03240852430462837,
+        "velocity_x": 1.2319775819778442,
+        "velocity_y": 0.6851447224617004
       },
       "rollout_window_vrmse_official": {
-        "6:12": 47.26524353027344,
-        "13:30": 83.07293701171875
+        "6:12": 47.20942687988281,
+        "13:30": 82.97189331054688
       },
       "rollout_window_vrmse_aggregated": {
-        "6:12": 28.985876083374023,
-        "13:30": 6.424099445343018
-      }
+        "6:12": 28.938323974609375,
+        "13:30": 6.417459487915039
+      },
+      "stability_horizon": 0
     },
     "CNextU-Net": {
-      "one_step_vrmse_field_avg": 0.2244170904159546,
+      "n_params": 18575344,
+      "n_params_millions": 18.575,
+      "one_step_vrmse_field_avg": 0.24466587603092194,
       "one_step_vrmse_per_field": {
-        "buoyancy": 0.057409703731536865,
-        "pressure": 0.017674630507826805,
-        "velocity_x": 0.3974672853946686,
-        "velocity_y": 0.42511674761772156
+        "buoyancy": 0.06172443553805351,
+        "pressure": 0.017085010185837746,
+        "velocity_x": 0.4323379397392273,
+        "velocity_y": 0.46751612424850464
       },
       "rollout_window_vrmse_official": {
-        "6:12": 9.6368408203125,
-        "13:30": 16.794635772705078
+        "6:12": 9.636756896972656,
+        "13:30": 16.794601440429688
       },
       "rollout_window_vrmse_aggregated": {
-        "6:12": 6.882636547088623,
-        "13:30": 1.6547985076904297
-      }
+        "6:12": 6.8825531005859375,
+        "13:30": 1.654725193977356
+      },
+      "stability_horizon": 0
     },
     "persistence": {
       "rollout_window_vrmse_official": {
-        "6:12": 0.14759652316570282,
-        "13:30": 0.40808796882629395
-      }
+        "6:12": 0.1475965529680252,
+        "13:30": 0.40808790922164917
+      },
+      "stability_horizon": 30
     },
     "mean": {
       "rollout_window_vrmse_official": {
         "6:12": 0.6198678612709045,
-        "13:30": 0.8483517169952393
-      }
+        "13:30": 0.8483518362045288
+      },
+      "stability_horizon": 30
     }
   }
 }

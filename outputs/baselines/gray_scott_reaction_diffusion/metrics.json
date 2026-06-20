@@ -16,7 +16,8 @@
         30
       ]
     },
-    "vrmse": "official per-sample the_well.benchmark.metrics.VRMSE; 'aggregated' = sqrt(sum MSE / sum var)"
+    "vrmse": "official per-sample the_well.benchmark.metrics.VRMSE; 'aggregated' = sqrt(sum MSE / sum var)",
+    "bands": "per-trajectory spread (median + 10-90th percentile) from a single full-test pass"
   },
   "fields": [
     "A",
@@ -24,76 +25,90 @@
   ],
   "models": {
     "FNO": {
+      "n_params": 19009154,
+      "n_params_millions": 19.009,
       "one_step_vrmse_field_avg": 38.03166198730469,
       "one_step_vrmse_per_field": {
         "A": 55.376708984375,
         "B": 20.68661117553711
       },
       "rollout_window_vrmse_official": {
-        "6:12": 266126.46875,
+        "6:12": 266127.34375,
         "13:30": Infinity
       },
       "rollout_window_vrmse_aggregated": {
-        "6:12": 188919.875,
-        "13:30": 3842433972436992.0
-      }
+        "6:12": 188918.984375,
+        "13:30": 3842098964987904.0
+      },
+      "stability_horizon": 0
     },
     "TFNO": {
+      "n_params": 19273994,
+      "n_params_millions": 19.274,
       "one_step_vrmse_field_avg": 1212.57666015625,
       "one_step_vrmse_per_field": {
         "A": 1639.005126953125,
         "B": 786.1482543945312
       },
       "rollout_window_vrmse_official": {
-        "6:12": 1.4425820189687808e+16,
+        "6:12": 1.4425892130390016e+16,
         "13:30": NaN
       },
       "rollout_window_vrmse_aggregated": {
-        "6:12": 1.114614343401472e+16,
+        "6:12": 1.114621322723328e+16,
         "13:30": NaN
-      }
+      },
+      "stability_horizon": 0
     },
     "U-Net": {
+      "n_params": 17463602,
+      "n_params_millions": 17.464,
       "one_step_vrmse_field_avg": 0.040695130825042725,
       "one_step_vrmse_per_field": {
         "A": 0.037892263382673264,
         "B": 0.043497998267412186
       },
       "rollout_window_vrmse_official": {
-        "6:12": 0.626079261302948,
-        "13:30": 15.471158981323242
+        "6:12": 0.6261009573936462,
+        "13:30": 15.471976280212402
       },
       "rollout_window_vrmse_aggregated": {
-        "6:12": 0.48316335678100586,
-        "13:30": 1.67014741897583
-      }
+        "6:12": 0.4831791818141937,
+        "13:30": 1.6701937913894653
+      },
+      "stability_horizon": 11
     },
     "CNextU-Net": {
+      "n_params": 18571562,
+      "n_params_millions": 18.572,
       "one_step_vrmse_field_avg": 0.03208053484559059,
       "one_step_vrmse_per_field": {
         "A": 0.03504407778382301,
         "B": 0.02911699190735817
       },
       "rollout_window_vrmse_official": {
-        "6:12": 0.3121732771396637,
-        "13:30": 2.140594244003296
+        "6:12": 0.31216904520988464,
+        "13:30": 2.140470027923584
       },
       "rollout_window_vrmse_aggregated": {
-        "6:12": 0.2726931869983673,
-        "13:30": 0.5728673338890076
-      }
+        "6:12": 0.27268898487091064,
+        "13:30": 0.572756290435791
+      },
+      "stability_horizon": 18
     },
     "persistence": {
       "rollout_window_vrmse_official": {
-        "6:12": 2.5872108936309814,
-        "13:30": 25.414508819580078
-      }
+        "6:12": 2.5872104167938232,
+        "13:30": 25.414506912231445
+      },
+      "stability_horizon": 3
     },
     "mean": {
       "rollout_window_vrmse_official": {
         "6:12": 1.6901804208755493,
-        "13:30": 19.586673736572266
-      }
+        "13:30": 19.5866756439209
+      },
+      "stability_horizon": 0
     }
   }
 }

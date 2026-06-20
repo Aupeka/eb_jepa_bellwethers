@@ -16,7 +16,8 @@
         30
       ]
     },
-    "vrmse": "official per-sample the_well.benchmark.metrics.VRMSE; 'aggregated' = sqrt(sum MSE / sum var)"
+    "vrmse": "official per-sample the_well.benchmark.metrics.VRMSE; 'aggregated' = sqrt(sum MSE / sum var)",
+    "bands": "per-trajectory spread (median + 10-90th percentile) from a single full-test pass"
   },
   "fields": [
     "density",
@@ -26,6 +27,8 @@
   ],
   "models": {
     "FNO": {
+      "n_params": 19011716,
+      "n_params_millions": 19.012,
       "one_step_vrmse_field_avg": 1.4965078830718994,
       "one_step_vrmse_per_field": {
         "density": 1.2870221138000488,
@@ -34,15 +37,18 @@
         "velocity_y": 1.1362096071243286
       },
       "rollout_window_vrmse_official": {
-        "6:12": 18983634944.0,
+        "6:12": 18983716864.0,
         "13:30": Infinity
       },
       "rollout_window_vrmse_aggregated": {
-        "6:12": 14379500544.0,
+        "6:12": 14379516928.0,
         "13:30": Infinity
-      }
+      },
+      "stability_horizon": 0
     },
     "TFNO": {
+      "n_params": 19276556,
+      "n_params_millions": 19.277,
       "one_step_vrmse_field_avg": 1.987743854522705,
       "one_step_vrmse_per_field": {
         "density": 1.0295641422271729,
@@ -51,15 +57,18 @@
         "velocity_y": 1.45097017288208
       },
       "rollout_window_vrmse_official": {
-        "6:12": 3.9579498767852783,
-        "13:30": 4.180830001831055
+        "6:12": 3.957949638366699,
+        "13:30": 4.180829048156738
       },
       "rollout_window_vrmse_aggregated": {
         "6:12": 3.172866106033325,
-        "13:30": 1.9447052478790283
-      }
+        "13:30": 1.9447050094604492
+      },
+      "stability_horizon": 0
     },
     "U-Net": {
+      "n_params": 17467156,
+      "n_params_millions": 17.467,
       "one_step_vrmse_field_avg": 0.26892656087875366,
       "one_step_vrmse_per_field": {
         "density": 0.09609898924827576,
@@ -68,15 +77,18 @@
         "velocity_y": 0.2626428008079529
       },
       "rollout_window_vrmse_official": {
-        "6:12": 0.7416424751281738,
-        "13:30": 1.273459792137146
+        "6:12": 0.7367551922798157,
+        "13:30": 1.2813560962677002
       },
       "rollout_window_vrmse_aggregated": {
-        "6:12": 0.6595169901847839,
-        "13:30": 0.9838559627532959
-      }
+        "6:12": 0.658801794052124,
+        "13:30": 0.9872029423713684
+      },
+      "stability_horizon": 14
     },
     "CNextU-Net": {
+      "n_params": 18575344,
+      "n_params_millions": 18.575,
       "one_step_vrmse_field_avg": 0.22629183530807495,
       "one_step_vrmse_per_field": {
         "density": 0.08569218218326569,
@@ -85,25 +97,28 @@
         "velocity_y": 0.21262913942337036
       },
       "rollout_window_vrmse_official": {
-        "6:12": 0.573144257068634,
-        "13:30": 1.0214958190917969
+        "6:12": 0.5733532905578613,
+        "13:30": 1.0230238437652588
       },
       "rollout_window_vrmse_aggregated": {
-        "6:12": 0.5627634525299072,
-        "13:30": 0.7707741260528564
-      }
+        "6:12": 0.5618184208869934,
+        "13:30": 0.772228479385376
+      },
+      "stability_horizon": 23
     },
     "persistence": {
       "rollout_window_vrmse_official": {
-        "6:12": 1.2025690078735352,
-        "13:30": 1.5833156108856201
-      }
+        "6:12": 1.2025688886642456,
+        "13:30": 1.5833152532577515
+      },
+      "stability_horizon": 4
     },
     "mean": {
       "rollout_window_vrmse_official": {
-        "6:12": 1.3854118585586548,
+        "6:12": 1.3854120969772339,
         "13:30": 1.6847325563430786
-      }
+      },
+      "stability_horizon": 0
     }
   }
 }
