@@ -165,6 +165,9 @@ class FNOEncoder(TemporalBatchMixin, nn.Module):
     """
 
     def __init__(self, in_d, h_d, out_d, modes=16, n_layers=4):
+        print("********************************************************")
+        print(f"FNOEncoder init: in_d={in_d}, h_d={h_d}, out_d={out_d}, modes={modes}, n_layers={n_layers}")
+        print("********************************************************")
         super().__init__()
         self.out_d = out_d
         self.lift = nn.Conv2d(in_d, h_d, kernel_size=1)
