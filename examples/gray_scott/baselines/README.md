@@ -84,3 +84,16 @@ The JEPA will decode its latent autoregressive rollout to field space and be sco
 **same** `well_rollout.py` + official VRMSE, on the same test split, same horizons and 6:12/13:30
 windows — so the JEPA-vs-surrogate plot is apples-to-apples. The JEPA must use the same protocol:
 stride 1, 4-frame context, denormalized VRMSE.
+
+`per_model_rollout_vrmse_aggregated.csv` holds the variance-pooled VRMSE (the same definition the
+JEPA `eval.py` uses), so `compare_jepa.py` overlays the best ablation JEPA against the baselines:
+
+```bash
+python -m examples.gray_scott.baselines.compare_jepa \
+    --baselines-dir outputs/baselines/gray_scott_reaction_diffusion \
+    --ablation-summary outputs/ablations/summary.json \
+    --out-dir outputs/comparison/gray_scott --select mean
+```
+Writes `comparison.png` (the headline figure), `comparison.csv`, `comparison.json`. If the
+aggregated CSV is absent (baselines not re-run yet), it falls back to the official per-sample CSV
+and labels the plot accordingly.

@@ -318,6 +318,17 @@ def write_outputs(out_dir, cfg, meta, one_step, rollout, viz, param_counts):
             row += [f"{rollout['persistence']['official'][i]:.6f}", f"{rollout['mean']['official'][i]:.6f}"]
             w.writerow(row)
 
+    # Variance-pooled (aggregated) per-horizon curve — same VRMSE definition the JEPA
+    # eval uses (sqrt(sum MSE / sum var)), so JEPA can be overlaid apples-to-apples.
+    with open(os.path.join(out_dir, "per_model_rollout_vrmse_aggregated.csv"), "w", newline="") as f:
+        w = csv.writer(f)
+        cols = ["horizon"] + model_names + ["persistence", "mean"]
+        w.writerow(cols)
+        for i, h in enumerate(horizons):
+            row = [h] + [f"{rollout[n]['aggregated'][i]:.6f}" for n in model_names]
+            row += [f"{rollout['persistence']['aggregated'][i]:.6f}", f"{rollout['mean']['aggregated'][i]:.6f}"]
+            w.writerow(row)
+
     # per_model_rollout_vrmse_band.csv: per-horizon median / p10 / p90 for every model + baselines
     band_names = model_names + ["persistence", "mean"]
     with open(os.path.join(out_dir, "per_model_rollout_vrmse_band.csv"), "w", newline="") as f:
