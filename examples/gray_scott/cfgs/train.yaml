@@ -9,12 +9,12 @@ data:
   img_size: 128
   n_frames: 10          # frames per clip
   time_stride: 4        # Gray-Scott evolves slowly -> space frames out
-  epoch_size: 2048      # number of clips to sample per epoch
-  batch_size: 512
+  epoch_size: 5 #2048      # number of clips to sample per epoch
+  batch_size: 32 #512
   num_workers: 16
 model:
   dobs: 2               # two chemical fields A, B (encoder in_d)
-  encoder: resnet5      # encoder backbone: resnet5 | fno
+  encoder: fno      # encoder backbone: resnet5 | fno
   henc: 32              # encoder hidden width
   dstc: 16              # latent dim D (encoder out_d)
   fno_modes: 16         # FNO: number of low Fourier modes kept per axis (encoder=fno)
