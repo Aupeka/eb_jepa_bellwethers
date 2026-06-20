@@ -18,6 +18,7 @@ import numpy as np
 import torch
 from omegaconf import OmegaConf
 
+from eb_jepa import architectures
 from eb_jepa.datasets.gray_scott.dataset import GrayScottConfig, make_loader
 from examples.gray_scott.main import build_encoder, build_jepa
 
@@ -71,31 +72,59 @@ def rollout_latents(jepa, x, H, device):
 # --------------------------------------------------------------------------- #
 # LATENT -> FIELD DECODER  — # TODO
 # --------------------------------------------------------------------------- #
-def build_decoder(encoder, dstc, device, ckpt_path, cfg):
+class CNNDecoder(torch.nn.Module):
+    """Shallow local latent->field decoder ``[B, D, T, H, W]`` -> ``[B, 2, T, H, W]``."""
+
+    def __init__(self, latent_dim, hidden_dim=64):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(latent_dim, hidden_dim, kernel_size=3, padding=1)
+        self.gelu1 = torch.nn.GELU()
+        self.conv2 = torch.nn.Conv2d(hidden_dim, hidden_dim, kernel_size=3, padding=1)
+        self.gelu2 = torch.nn.GELU()
+        self.conv3 = torch.nn.Conv2d(hidden_dim, 2, kernel_size=1)
+
+    def forward(self, x):
+        B, D, T, H, W = x.shape
+        x = x.permute(0, 2, 1, 3, 4).reshape(B * T, D, H, W)
+        x = self.conv1(x)
+        x = self.gelu1(x)
+        x = self.conv2(x)
+        x = self.gelu2(x)
+        x = self.conv3(x)
+        x = x.reshape(B, T, 2, H, W).permute(0, 2, 1, 3, 4)
+        return x
+
+
+def make_decoder_module(kind, dstc, cfg, hidden=64):
+    """Build a latent->field decoder of the requested ``kind``.
+
+    All decoders map ``[B, dstc, T, H, W]`` -> ``[B, 2, T, H, W]`` at full
+    resolution:
+      * ``cnn``      shallow local 3-conv decoder (small receptive field).
+      * ``resunet``  multi-scale ResUNet (large receptive field + skip detail).
+      * ``spectral`` Fourier-operator decoder (FNOEncoder with out_d=2), which
+        inverts the FNO encoder in the same Fourier basis / periodic domain.
+    """
+    if kind == "cnn":
+        return CNNDecoder(dstc, hidden)
+    if kind == "resunet":
+        return architectures.ResUNet(dstc, hidden, 2)
+    if kind == "spectral":
+        return architectures.FNOEncoder(
+            in_d=dstc, h_d=hidden, out_d=2,
+            modes=cfg.model.get("fno_modes", 16),
+            n_layers=cfg.model.get("fno_layers", 4))
+    raise ValueError(f"unknown decoder kind={kind!r} (expected cnn|resunet|spectral)")
+
+
+def build_decoder(encoder, dstc, device, ckpt_path, cfg, kind="cnn", hidden=64):
     """Return a trained latent->field decoder mapping ``[B, D, T, H, W]`` ->
-    ``[B, 2, T, H, W]``. Trains it on-the-fly if weights are not found."""
-    class Decoder(torch.nn.Module):
-        def __init__(self, latent_dim, hidden_dim=64):
-            super().__init__()
-            self.conv1 = torch.nn.Conv2d(latent_dim, hidden_dim, kernel_size=3, padding=1)
-            self.gelu1 = torch.nn.GELU()
-            self.conv2 = torch.nn.Conv2d(hidden_dim, hidden_dim, kernel_size=3, padding=1)
-            self.gelu2 = torch.nn.GELU()
-            self.conv3 = torch.nn.Conv2d(hidden_dim, 2, kernel_size=1)
+    ``[B, 2, T, H, W]``. Trains it on-the-fly if weights are not found.
 
-        def forward(self, x):
-            B, D, T, H, W = x.shape
-            x = x.permute(0, 2, 1, 3, 4).reshape(B * T, D, H, W)
-            x = self.conv1(x)
-            x = self.gelu1(x)
-            x = self.conv2(x)
-            x = self.gelu2(x)
-            x = self.conv3(x)
-            x = x.reshape(B, T, 2, H, W).permute(0, 2, 1, 3, 4)
-            return x
-
-    decoder = Decoder(dstc).to(device)
-    decoder_path = os.path.join(os.path.dirname(ckpt_path), "decoder.pth")
+    ``kind`` selects the decoder architecture (cnn|resunet|spectral); weights are
+    cached per kind so an ablation can reuse them across runs."""
+    decoder = make_decoder_module(kind, dstc, cfg, hidden).to(device)
+    decoder_path = os.path.join(os.path.dirname(ckpt_path), f"decoder_{kind}.pth")
 
     # region agent log (debug session 870c4c)
     _exists = os.path.exists(decoder_path)
@@ -239,19 +268,23 @@ def vrmse_per_horizon(jepa, encoder, decoder, loader, device, H):
     }
 
 
-def evaluate_checkpoint(ckpt_path, H, device=None, epoch_size=400, batch_size=8):
+def evaluate_checkpoint(ckpt_path, H, device=None, epoch_size=400, batch_size=8,
+                        decoder_kind="cnn", decoder_hidden=64):
     """Load a JEPA checkpoint, (re)build its decoder, and score per-horizon VRMSE.
 
     Returns ``{"scores": {jepa/persistence/decoder_floor: np.ndarray[H]},
     "param_count": int, "epoch": int}``. Reused by ``main()`` (CLI) and by the
-    ablation driver so every final model is scored under the identical H=30 protocol."""
+    ablation driver so every final model is scored under the identical H=30 protocol.
+    ``decoder_kind`` selects the latent->field decoder (cnn|resunet|spectral)."""
     device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     jepa, encoder = load_jepa(ckpt, device)
     cfg = OmegaConf.create(ckpt["cfg"])
     dstc = int(cfg.model.dstc)
-    decoder = build_decoder(encoder, dstc, device, ckpt_path, cfg)
-    print(f"[gs-eval] loaded {ckpt_path} (epoch {ckpt.get('epoch')}), H={H}", flush=True)
+    decoder = build_decoder(encoder, dstc, device, ckpt_path, cfg,
+                            kind=decoder_kind, hidden=decoder_hidden)
+    print(f"[gs-eval] loaded {ckpt_path} (epoch {ckpt.get('epoch')}), H={H}, "
+          f"decoder={decoder_kind}", flush=True)
 
     dcfg = GrayScottConfig(split="valid", n_frames=C + H, time_stride=4,
                            epoch_size=epoch_size, batch_size=batch_size, num_workers=8)
@@ -264,12 +297,39 @@ def evaluate_checkpoint(ckpt_path, H, device=None, epoch_size=400, batch_size=8)
 def main():
     ckpt_path = sys.argv[sys.argv.index("--ckpt") + 1]
     H = int(sys.argv[sys.argv.index("--H") + 1]) if "--H" in sys.argv else 10
+    decoder_arg = sys.argv[sys.argv.index("--decoder") + 1] if "--decoder" in sys.argv else "cnn"
+    decoder_hidden = int(sys.argv[sys.argv.index("--decoder_hidden") + 1]) \
+        if "--decoder_hidden" in sys.argv else 64
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    result = evaluate_checkpoint(ckpt_path, H, device)
-    print(f"[gs-eval] params={result['param_count'] / 1e6:.2f}M", flush=True)
-    for name, arr in result["scores"].items():
-        print(f"   {name:14s} h1={arr[0]:.3f} h{H}={arr[-1]:.3f} | {np.round(arr, 3).tolist()}", flush=True)
+    kinds = ["cnn", "resunet", "spectral"] if decoder_arg == "all" else [decoder_arg]
+    results = {}
+    for kind in kinds:
+        results[kind] = evaluate_checkpoint(ckpt_path, H, device,
+                                            decoder_kind=kind, decoder_hidden=decoder_hidden)
+
+    if len(kinds) == 1:
+        result = results[kinds[0]]
+        print(f"[gs-eval] params={result['param_count'] / 1e6:.2f}M", flush=True)
+        for name, arr in result["scores"].items():
+            print(f"   {name:14s} h1={arr[0]:.3f} h{H}={arr[-1]:.3f} | {np.round(arr, 3).tolist()}", flush=True)
+        return
+
+    # Ablation comparison: persistence is decoder-independent, print it once.
+    mid = H // 2
+    pers = results[kinds[0]]["scores"]["persistence"]
+    print(f"\n[gs-eval] decoder ablation (H={H}) | persistence "
+          f"h1={pers[0]:.3f} h{mid + 1}={pers[mid]:.3f} h{H}={pers[-1]:.3f}", flush=True)
+    print(f"   {'decoder':10s} {'floor_h1':>9s} {'floor_hmid':>11s} {'floor_hH':>9s} "
+          f"{'jepa_h1':>9s} {'jepa_hH':>9s}", flush=True)
+    for kind in kinds:
+        fl = results[kind]["scores"]["decoder_floor"]
+        je = results[kind]["scores"]["jepa"]
+        print(f"   {kind:10s} {fl[0]:9.3f} {fl[mid]:11.3f} {fl[-1]:9.3f} "
+              f"{je[0]:9.3f} {je[-1]:9.3f}", flush=True)
+    for kind in kinds:
+        fl = results[kind]["scores"]["decoder_floor"]
+        print(f"   [{kind}] decoder_floor per horizon: {np.round(fl, 3).tolist()}", flush=True)
 
 
 if __name__ == "__main__":

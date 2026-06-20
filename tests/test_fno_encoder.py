@@ -61,6 +61,24 @@ def test_fno_encoder_autocast_bf16_safe():
     assert out.shape == (2, 8, 64, 64)
 
 
+def test_resunet_decoder_latent_to_field_shape():
+    """ResUNet decoder maps latent [B, D, T, H, W] -> field [B, 2, T, H, W]."""
+    dec = ResUNet(16, 32, 2)
+    z4 = torch.randn(2, 16, 64, 64)
+    assert dec(z4).shape == (2, 2, 64, 64)
+    z5 = torch.randn(2, 16, 5, 64, 64)
+    assert dec(z5).shape == (2, 2, 5, 64, 64)
+
+
+def test_spectral_decoder_latent_to_field_shape():
+    """Spectral decoder (FNOEncoder with out_d=2) maps latent -> 2-channel field."""
+    dec = FNOEncoder(in_d=16, h_d=32, out_d=2, modes=8, n_layers=2)
+    z4 = torch.randn(2, 16, 64, 64)
+    assert dec(z4).shape == (2, 2, 64, 64)
+    z5 = torch.randn(2, 16, 5, 64, 64)
+    assert dec(z5).shape == (2, 2, 5, 64, 64)
+
+
 def test_fno_encoder_in_jepa_unroll():
     """A JEPA built with the FNO encoder runs one parallel unroll step with loss."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
