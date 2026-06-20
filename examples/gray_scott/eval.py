@@ -24,6 +24,23 @@ from examples.gray_scott.main import build_encoder, build_jepa
 C = 2            # context_length (StateOnlyPredictor predicts from the previous 2 frames)
 
 
+# region agent log (debug session 870c4c)
+def _dbg(hyp, message, data):
+    import json as _json
+    import time as _time
+    rec = {"sessionId": "870c4c", "runId": "initial", "hypothesisId": hyp,
+           "location": "examples/gray_scott/eval.py", "message": message,
+           "data": data, "timestamp": int(_time.time() * 1000)}
+    line = _json.dumps(rec, default=str)
+    print("[DBG] " + line, flush=True)
+    try:
+        with open("/home/sardi/eb_jepa_bellwethers/.cursor/debug-870c4c.log", "a") as _f:
+            _f.write(line + "\n")
+    except Exception:
+        pass
+# endregion
+
+
 def load_jepa(ckpt, device):
     """Provided: rebuild encoder + JEPA from a training checkpoint and freeze."""
     cfg = OmegaConf.create(ckpt["cfg"])
@@ -80,9 +97,27 @@ def build_decoder(encoder, dstc, device, ckpt_path, cfg):
     decoder = Decoder(dstc).to(device)
     decoder_path = os.path.join(os.path.dirname(ckpt_path), "decoder.pth")
 
+    # region agent log (debug session 870c4c)
+    _exists = os.path.exists(decoder_path)
+    _init_pnorm = float(sum(p.detach().abs().sum().item() for p in decoder.parameters()))
+    _dbg("H-A", "build_decoder_entry", {
+        "decoder_path": decoder_path,
+        "exists": bool(_exists),
+        "branch": "load" if _exists else "train",
+        "fresh_init_param_abs_sum": _init_pnorm,
+    })
+    # endregion
+
     if os.path.exists(decoder_path):
         print(f"[decoder] Loading weights from {decoder_path}", flush=True)
         decoder.load_state_dict(torch.load(decoder_path, map_location=device, weights_only=True))
+        # region agent log (debug session 870c4c)
+        _loaded_pnorm = float(sum(p.detach().abs().sum().item() for p in decoder.parameters()))
+        _dbg("H-B", "decoder_loaded", {
+            "loaded_param_abs_sum": _loaded_pnorm,
+            "changed_from_fresh_init": abs(_loaded_pnorm - _init_pnorm) > 1e-6,
+        })
+        # endregion
     else:
         print(f"[decoder] Weights not found. Training decoder from scratch...", flush=True)
         dcfg_dict = OmegaConf.to_container(cfg.data, resolve=True)
@@ -95,19 +130,23 @@ def build_decoder(encoder, dstc, device, ckpt_path, cfg):
         decoder.train()
         encoder.eval()
 
-        for epoch in range(2):
-            total_loss = 0
-            for batch in train_loader:
-                x = batch["video"].to(device, non_blocking=True)
-                with torch.no_grad():
-                    z = encoder(x)
-                pred = decoder(z)
-                loss = torch.nn.functional.mse_loss(pred, x)
-                opt.zero_grad()
-                loss.backward()
-                opt.step()
-                total_loss += loss.item()
-            print(f"[decoder] Epoch {epoch} loss: {total_loss / len(train_loader):.4f}", flush=True)
+        for epoch in range(10):
+            try:
+                total_loss = 0
+                for batch in train_loader:
+                    x = batch["video"].to(device, non_blocking=True)
+                    with torch.no_grad():
+                        z = encoder(x)
+                    pred = decoder(z)
+                    loss = torch.nn.functional.mse_loss(pred, x)
+                    opt.zero_grad()
+                    loss.backward()
+                    opt.step()
+                    total_loss += loss.item()
+                print(f"[decoder] Epoch {epoch} loss: {total_loss / len(train_loader):.4f}", flush=True)
+            except Exception as e:
+                print(f"Epoch {epoch} out of range")
+                continue
 
 
         torch.save(decoder.state_dict(), decoder_path)
@@ -128,6 +167,7 @@ def vrmse_per_horizon(jepa, encoder, decoder, loader, device, H):
     num_flor = np.zeros(H)
     den_total = np.zeros(H)
 
+    _first_batch = True
     for batch in loader:
         x = batch["video"].to(device)  # [B, 2, C+H, height, width]
         B = x.shape[0]
@@ -147,6 +187,30 @@ def vrmse_per_horizon(jepa, encoder, decoder, loader, device, H):
         with torch.no_grad():
             latents_true = encoder(true_future)
             field_floor = decoder(latents_true)
+
+        # region agent log (debug session 870c4c)
+        if _first_batch:
+            _first_batch = False
+            with torch.no_grad():
+                _dbg("H-C", "encoder_latent_stats", {
+                    "latents_true_std": float(latents_true.float().std().item()),
+                    "latents_true_mean": float(latents_true.float().mean().item()),
+                    "latents_pred_std": float(latents_pred.float().std().item()),
+                    "latents_true_shape": list(latents_true.shape),
+                })
+                _dbg("H-D", "field_scale_stats", {
+                    "true_future_std": float(true_future.float().std().item()),
+                    "true_future_mean": float(true_future.float().mean().item()),
+                    "field_floor_std": float(field_floor.float().std().item()),
+                    "field_floor_mean": float(field_floor.float().mean().item()),
+                    "field_pred_std": float(field_pred.float().std().item()),
+                })
+                _dbg("H-B", "floor_recon_quality", {
+                    "floor_mse_vs_true": float(((field_floor - true_future) ** 2).mean().item()),
+                    "mean_baseline_mse": float(
+                        ((true_future - true_future.mean(dim=(-2, -1), keepdim=True)) ** 2).mean().item()),
+                })
+        # endregion
 
         # Accumulate metrics per horizon step
         for h in range(H):
