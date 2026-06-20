@@ -140,6 +140,22 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
     os.makedirs(ckpt_dir, exist_ok=True)
     gstep = 0
 
+    # region agent log (debug session 5a0aa9)
+    def _dbg(hyp, message, data):
+        import json as _json
+        import time as _time
+        rec = {"sessionId": "5a0aa9", "runId": "run1", "hypothesisId": hyp,
+               "location": "examples/gray_scott/main.py", "message": message,
+               "data": data, "timestamp": int(_time.time() * 1000)}
+        line = _json.dumps(rec, default=str)
+        print("[DBG] " + line, flush=True)
+        try:
+            with open("/home/sardi/eb_jepa_bellwethers/.cursor/debug-5a0aa9.log", "a") as _f:
+                _f.write(line + "\n")
+        except Exception:
+            pass
+    # endregion
+
     # -- W&B logging
     use_wandb = cfg.logging.get("log_wandb", False)
     wandb_run = setup_wandb(
@@ -161,7 +177,7 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
 
     best_val_pred_loss = float('inf')
     epochs_without_improvement = 0
-    patience = 3
+    patience = 15
 
     for epoch in range(cfg.optim.epochs):
         jepa.train()
@@ -176,7 +192,50 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
             if scaler.is_enabled():
                 scaler.scale(jepa_loss).backward(); scaler.step(opt); scaler.update()
             else:
-                jepa_loss.backward(); opt.step()
+                jepa_loss.backward()
+                # region agent log (debug session 5a0aa9)
+                if gstep < 3:
+                    spec_sq = rest_sq = 0.0
+                    spec_none = rest_none = 0
+                    for _n, _p in jepa.named_parameters():
+                        if _p.grad is None:
+                            if "spectral" in _n:
+                                spec_none += 1
+                            else:
+                                rest_none += 1
+                            continue
+                        _gn = float((_p.grad.detach().abs() ** 2).sum().item())
+                        if "spectral" in _n:
+                            spec_sq += _gn
+                        else:
+                            rest_sq += _gn
+                    _w1_before = float(jepa.encoder.spectral[0].w1.detach().abs().sum().item())
+                    _hw_before = float(jepa.encoder.head[-1].weight.detach().abs().sum().item())
+                    with torch.no_grad():
+                        _z = jepa.encoder(x)
+                    _dbg("H1H2H3H4H5", "pre_step", {
+                        "gstep": gstep,
+                        "loss": float(jepa_loss.item()),
+                        "loss_requires_grad": bool(jepa_loss.requires_grad),
+                        "loss_has_grad_fn": jepa_loss.grad_fn is not None,
+                        "loss_isnan": bool(torch.isnan(jepa_loss).item()),
+                        "loss_isinf": bool(torch.isinf(jepa_loss).item()),
+                        "spec_grad_norm": spec_sq ** 0.5,
+                        "rest_grad_norm": rest_sq ** 0.5,
+                        "spec_grad_none": spec_none,
+                        "rest_grad_none": rest_none,
+                        "enc_out_std": float(_z.float().std().item()),
+                        "enc_out_mean": float(_z.float().mean().item()),
+                    })
+                    opt.step()
+                    _dbg("H1", "post_step", {
+                        "gstep": gstep,
+                        "w1_abs_sum_delta": float(jepa.encoder.spectral[0].w1.detach().abs().sum().item()) - _w1_before,
+                        "head_w_abs_sum_delta": float(jepa.encoder.head[-1].weight.detach().abs().sum().item()) - _hw_before,
+                    })
+                else:
+                    opt.step()
+                # endregion
             gstep += 1
             if gstep % cfg.logging.log_every == 0:
                 print(f"e{epoch} s{gstep} loss={jepa_loss.item():.4f} "
