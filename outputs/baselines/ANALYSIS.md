@@ -12,8 +12,14 @@ out textbook-correct and paper-consistent through that same code).
 
 Per dataset (`outputs/baselines/<dataset>/`):
 - `vrmse_vs_horizon.png` - median VRMSE per horizon with a shaded 10-90th percentile band
-  over test trajectories. FNO/TFNO climb as straight lines on the log axis (exponential
-  growth) and are marked `(diverged)`; U-Net/CNextU-Net degrade gracefully.
+  over test trajectories (solid+band = per-sample "official"; thin dashed = variance-pooled
+  "aggregated"). FNO/TFNO climb as straight lines on the log axis (exponential growth), are
+  marked `(diverged)`, and are truncated with an `X` at the horizon where they leave the
+  readable scale (the y-axis is capped from the finite reference curves so the bounded models
+  stay legible); U-Net/CNextU-Net degrade gracefully.
+- `vrmse_per_field.png` - per-field aggregated VRMSE per horizon (one panel per physical
+  field). This is where `rayleigh_benard` becomes interpretable: buoyancy/pressure are
+  predicted well while the velocity fields dominate the headline error (see RB note below).
 - `rollout.gif` - ground truth vs each model across horizons. FNO collapses into diagonal
   spectral-aliasing stripes; TFNO saturates to a near-constant field; CNextU-Net tracks the
   truth the longest.
@@ -70,6 +76,35 @@ improve on. Headline framing:
   bounded - and these curves are what JEPA's denoised latent rollout is compared against,
   at a fraction of the parameters (see `n_params` in each `metrics.json`).
 
-Note on `rayleigh_benard`: its tiny per-step change makes persistence a very strong baseline
-and the learned models can sit above it; read the banded curve and the persistence reference
-together rather than the windowed numbers alone.
+## Reading `rayleigh_benard`: a VRMSE normalization pathology, not a second bug
+
+RB's headline (per-sample "official") VRMSE looks alarming and even *decreases* with horizon
+for FNO/TFNO. This is a property of the metric on this dataset, not model recovery:
+
+- VRMSE divides by the **per-snapshot spatial variance of the ground-truth field**. In
+  Rayleigh-Benard the **velocity fields are near-uniform at the start of each trajectory**
+  (convection has not developed yet), so `Var_space(velocity) -> ~0` and the per-sample VRMSE
+  explodes for those early snapshots even when the absolute error is small.
+- The per-field breakdown in `metrics.json` / `vrmse_per_field.png` confirms this: one-step
+  VRMSE is tiny for buoyancy/pressure but large for velocity (e.g. FNO velocity_x 11.5,
+  velocity_y 31.5; even CNextU-Net velocity ~0.45 vs buoyancy ~0.06).
+- The FNO/TFNO rollout curves *decrease* (FNO h1=75 -> h30=11) because as convection develops
+  the velocity variance (the denominator) grows, not because the error shrinks. A genuinely
+  diverging curve increases.
+
+The **aggregated** VRMSE (`sqrt(sum MSE / sum var)`, pooled over snapshots so low-variance
+frames cannot blow up) tells the trustworthy story. At the 13:30 window, official vs
+aggregated:
+
+| model      | official | aggregated |
+|------------|----------|------------|
+| FNO        | 24.0     | 2.5        |
+| TFNO       | 35.0     | 3.3        |
+| U-Net      | 83.0     | 6.4        |
+| CNextU-Net | 16.8     | 1.7        |
+
+Guidance: for RB read the **aggregated** curve and the **per-field** plot, not the per-sample
+windowed numbers. Also note RB's tiny per-step change makes persistence a very strong baseline
+(VRMSE ~0.01-0.5), so the learned models sit above it; compare against the persistence
+reference. ("official" remains the headline for gray_scott / TRL2D, whose fields stay
+well-excited and do not trigger this pathology.)
