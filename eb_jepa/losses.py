@@ -399,3 +399,45 @@ class BCS(nn.Module):
         invariance_loss = F.mse_loss(z1, z2).mean()
         total_loss = invariance_loss + self.lmbd * bcs
         return {"loss": total_loss, "bcs_loss": bcs, "invariance_loss": invariance_loss}
+
+
+class SIGReg(nn.Module):
+    """SIGReg anti-collapse for single-stream (predictive) JEPA.
+
+    Pushes the embedding distribution toward an isotropic Gaussian using the
+    Epps-Pulley statistic over random 1-D projections (sliced characteristic-function
+    test, in the spirit of LeJEPA's SIGReg). It is a drop-in replacement for ``VCLoss``
+    in ``JEPA(encoder, encoder, predictor, regularizer, predcost)``: same call signature
+    ``forward(x, actions=None) -> (loss, unweighted, loss_dict)`` and same ``.proj`` (shared
+    with ``SquareLossSeq``).
+
+    The latent ``[B, C, T, H, W]`` is spatially mean-pooled to ``[B*T, C]`` BEFORE the test,
+    so the sample tensor stays small (``B*T`` rows). A per-pixel reduction (``B*T*H*W`` rows)
+    would make the Epps-Pulley ``(N, slices, points)`` tensor explode. Single-stream, so
+    there is no two-view invariance term (unlike ``BCS``)."""
+
+    def __init__(self, sigreg_coeff, num_slices=256, n_points=17, proj=None):
+        super().__init__()
+        self.sigreg_coeff = sigreg_coeff
+        self.num_slices = num_slices
+        self.n_points = n_points
+        self.proj = nn.Identity() if proj is None else proj
+        self.step = 0
+
+    def forward(self, x, actions=None):
+        b, c, t, h, w = x.shape
+        z = x.mean(dim=(-2, -1)).permute(0, 2, 1).reshape(b * t, c)  # [B*T, C]
+        fz = self.proj(z)  # [B*T, C']
+        d = fz.shape[1]
+        with torch.no_grad():
+            g = torch.Generator(device=fz.device)
+            g.manual_seed(self.step)
+            A = torch.randn(d, self.num_slices, device=fz.device, generator=g)
+            A = A / A.norm(p=2, dim=0, keepdim=True)
+        self.step += 1
+        # float32 for the complex characteristic-function math (autocast may be bf16)
+        view = (fz @ A).float()  # [B*T, num_slices]
+        view = (view - view.mean(0, keepdim=True)) / (view.std(0, keepdim=True) + 1e-6)
+        sigreg = epps_pulley(view, n_points=self.n_points).mean()
+        loss = self.sigreg_coeff * sigreg
+        return loss, sigreg.detach(), {"sigreg_loss": sigreg.item()}

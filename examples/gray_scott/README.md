@@ -57,3 +57,24 @@ duplicate it.
 python -m examples.gray_scott.main --fname examples/gray_scott/cfgs/train.yaml
 python -m examples.gray_scott.eval --ckpt <.../latest.pth.tar> --H 10
 ```
+
+## Ablation matrix
+`ablation.py` sweeps **K (`model.steps`) in {1,2,4,8}** x **regularizer in {vicreg, sigreg}**
+(encoder fixed to ResNet5, predictor fixed to `StateOnlyPredictor(ResUNet)`) = 8 combos.
+Per combo it runs an Optuna study (under a parameter-budget cap), trains one final model on
+the best config, scores H=30 field-space VRMSE, and writes `<out_root>/<combo>/metrics.json`
+plus an aggregated `<out_root>/summary.json`.
+
+```bash
+# smoke (1 combo, tiny):
+python -m examples.gray_scott.ablation --combos resnet5_vicreg_K2 \
+    --n_trials 2 --short_run_epochs 1 --final_epochs 1 --H 6
+
+# full matrix (8 combos), 10M param cap, with W&B:
+python -m examples.gray_scott.ablation --n_trials 20 --short_run_epochs 3 \
+    --final_epochs 20 --H 30 --param_cap_m 10 \
+    --out_root /lustre/work/.../outputs/ablations --wandb
+```
+Raise `--param_cap_m` (e.g. 20) for a param-matched comparison against the ~17–19M Well
+baselines. W&B is opt-in (`--wandb`, plus `--wandb_trials` to log every Optuna trial); it
+honors `WANDB_DISABLED` from `env.sh` and is a no-op when `wandb` is not installed.

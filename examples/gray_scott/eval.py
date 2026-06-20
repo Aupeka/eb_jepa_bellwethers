@@ -174,23 +174,36 @@ def vrmse_per_horizon(jepa, encoder, decoder, loader, device, H):
     }
 
 
-def main():
-    ckpt_path = sys.argv[sys.argv.index("--ckpt") + 1]
-    H = int(sys.argv[sys.argv.index("--H") + 1]) if "--H" in sys.argv else 10
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def evaluate_checkpoint(ckpt_path, H, device=None, epoch_size=400, batch_size=8):
+    """Load a JEPA checkpoint, (re)build its decoder, and score per-horizon VRMSE.
 
+    Returns ``{"scores": {jepa/persistence/decoder_floor: np.ndarray[H]},
+    "param_count": int, "epoch": int}``. Reused by ``main()`` (CLI) and by the
+    ablation driver so every final model is scored under the identical H=30 protocol."""
+    device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     jepa, encoder = load_jepa(ckpt, device)
     cfg = OmegaConf.create(ckpt["cfg"])
     dstc = int(cfg.model.dstc)
     decoder = build_decoder(encoder, dstc, device, ckpt_path, cfg)
-    print(f"[gs-eval] loaded (epoch {ckpt.get('epoch')}), H={H}", flush=True)
+    print(f"[gs-eval] loaded {ckpt_path} (epoch {ckpt.get('epoch')}), H={H}", flush=True)
 
     dcfg = GrayScottConfig(split="valid", n_frames=C + H, time_stride=4,
-                           epoch_size=400, batch_size=8, num_workers=8)
+                           epoch_size=epoch_size, batch_size=batch_size, num_workers=8)
     loader = make_loader(dcfg, shuffle=False)
     scores = vrmse_per_horizon(jepa, encoder, decoder, loader, device, H)
-    for name, arr in scores.items():
+    param_count = int(sum(p.numel() for p in jepa.parameters()))
+    return {"scores": scores, "param_count": param_count, "epoch": ckpt.get("epoch")}
+
+
+def main():
+    ckpt_path = sys.argv[sys.argv.index("--ckpt") + 1]
+    H = int(sys.argv[sys.argv.index("--H") + 1]) if "--H" in sys.argv else 10
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    result = evaluate_checkpoint(ckpt_path, H, device)
+    print(f"[gs-eval] params={result['param_count'] / 1e6:.2f}M", flush=True)
+    for name, arr in result["scores"].items():
         print(f"   {name:14s} h1={arr[0]:.3f} h{H}={arr[-1]:.3f} | {np.round(arr, 3).tolist()}", flush=True)
 
 
