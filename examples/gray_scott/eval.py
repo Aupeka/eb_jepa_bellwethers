@@ -95,19 +95,24 @@ def build_decoder(encoder, dstc, device, ckpt_path, cfg):
         decoder.train()
         encoder.eval()
 
-        for epoch in range(2):
-            total_loss = 0
-            for batch in train_loader:
-                x = batch["video"].to(device, non_blocking=True)
-                with torch.no_grad():
-                    z = encoder(x)
-                pred = decoder(z)
-                loss = torch.nn.functional.mse_loss(pred, x)
-                opt.zero_grad()
-                loss.backward()
-                opt.step()
-                total_loss += loss.item()
-            print(f"[decoder] Epoch {epoch} loss: {total_loss / len(train_loader):.4f}", flush=True)
+        for epoch in range(5):
+            try:
+                total_loss = 0
+                for batch in train_loader:
+                    x = batch["video"].to(device, non_blocking=True)
+                    with torch.no_grad():
+                        z = encoder(x)
+                    pred = decoder(z)
+                    loss = torch.nn.functional.mse_loss(pred, x)
+                    opt.zero_grad()
+                    loss.backward()
+                    opt.step()
+                    total_loss += loss.item()
+                print(f"[decoder] Epoch {epoch} loss: {total_loss / len(train_loader):.4f}", flush=True)
+
+            except Exception as e:
+                print(f"Epoch {epoch} out of range")
+                continue
 
         torch.save(decoder.state_dict(), decoder_path)
         print(f"[decoder] Saved weights to {decoder_path}", flush=True)

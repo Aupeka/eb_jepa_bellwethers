@@ -191,7 +191,7 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
 
     best_val_pred_loss = float('inf')
     epochs_without_improvement = 0
-    patience = 15
+    patience = 3
 
     for epoch in range(cfg.optim.epochs):
         jepa.train()
