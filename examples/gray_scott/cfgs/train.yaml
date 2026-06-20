@@ -21,7 +21,7 @@ model:
   # TODO: add any extra hyperparameters your encoder / JEPA assembly need
   #       (e.g. ema decay, projector spec, predictor variant)
 loss:
-  std_coeff: 10.0       # VCLoss variance term (anti-collapse)
+  std_coeff: 1.0       # VCLoss variance term (anti-collapse)
   cov_coeff: 100.0      # VCLoss covariance term
 optim:
   epochs: 20
@@ -33,3 +33,7 @@ logging:
   log_every: 50
   save_predictions: true   # latent prediction-vs-target artifacts per epoch
   pred_samples: 4          # number of horizons shown in the heatmap panel
+  log_wandb: true
+  wandb_project: eb_jepa
+  wandb_group:             # optional: group runs together (e.g. sweep name)
+  wandb_sweep_id:          # optional: associate with a wandb sweep

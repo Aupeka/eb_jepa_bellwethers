@@ -25,6 +25,7 @@ from omegaconf import OmegaConf
 
 from eb_jepa.datasets.gray_scott.dataset import GrayScottConfig, make_loader
 from eb_jepa import architectures, losses, jepa
+from eb_jepa.training_utils import setup_wandb
 
 # Reuse the eb_jepa core — DO NOT reimplement these:
 #   eb_jepa.architectures: ResNet5 / ImpalaEncoder (2D encoders), ResUNet
@@ -116,11 +117,29 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
     ckpt_dir = folder or cfg.meta.ckpt_dir
     os.makedirs(ckpt_dir, exist_ok=True)
     gstep = 0
-    
+
+    # -- W&B logging
+    use_wandb = cfg.logging.get("log_wandb", False)
+    wandb_run = setup_wandb(
+        project=cfg.logging.get("wandb_project", "eb_jepa"),
+        config={
+            "example": "gray_scott",
+            **OmegaConf.to_container(cfg, resolve=True),
+        },
+        run_dir=ckpt_dir,
+        run_name=f"gs_seed{cfg.meta.seed}",
+        tags=[f"seed_{cfg.meta.seed}", "gray_scott"],
+        group=cfg.logging.get("wandb_group"),
+        enabled=use_wandb,
+        sweep_id=cfg.logging.get("wandb_sweep_id"),
+    )
+    if use_wandb:
+        import wandb
+
     best_val_pred_loss = float('inf')
     epochs_without_improvement = 0
     patience = 3
-    
+
     for epoch in range(cfg.optim.epochs):
         jepa.train()
         t0 = time.time()
@@ -139,6 +158,14 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
             if gstep % cfg.logging.log_every == 0:
                 print(f"e{epoch} s{gstep} loss={jepa_loss.item():.4f} "
                       f"vc={regl.item():.4f} pred={pl.item():.4f}", flush=True)
+                if use_wandb:
+                    wandb.log({
+                        "train/total_loss": jepa_loss.item(),
+                        "train/vc_loss": regl.item(),
+                        "train/pred_loss": pl.item(),
+                        "train/lr": opt.param_groups[0]["lr"],
+                        "epoch": epoch,
+                    }, step=gstep)
 
         # val
         jepa.eval(); vl = 0.0; vp = 0.0; nb = 0
@@ -151,7 +178,15 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
                 vl += jl.item(); vp += pl.item(); nb += 1
         val_loss = vl / max(nb, 1)
         val_pred_loss = vp / max(nb, 1)
-        print(f"[epoch {epoch}] {time.time() - t0:.0f}s | val_loss={val_loss:.4f} val_pred={val_pred_loss:.4f}", flush=True)
+        epoch_time = time.time() - t0
+        print(f"[epoch {epoch}] {epoch_time:.0f}s | val_loss={val_loss:.4f} val_pred={val_pred_loss:.4f}", flush=True)
+        if use_wandb:
+            wandb.log({
+                "val/total_loss": val_loss,
+                "val/pred_loss": val_pred_loss,
+                "epoch": epoch,
+                "epoch_time": epoch_time,
+            }, step=gstep)
         
         # Save latest checkpoint
         torch.save({"epoch": epoch,
@@ -182,8 +217,13 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
             epochs_without_improvement += 1
             if epochs_without_improvement >= patience:
                 print(f"[gs] Early stopping triggered! No improvement in pred-loss for {patience} epochs.", flush=True)
+                if use_wandb:
+                    wandb.log({"early_stopped": True, "early_stop_epoch": epoch}, step=gstep)
                 break
 
+    if use_wandb:
+        wandb.log({"best_val_pred_loss": best_val_pred_loss}, step=gstep)
+        wandb.finish()
     print(f"[gs] done -> {ckpt_dir}/latest.pth.tar and best.pth.tar", flush=True)
     return best_val_pred_loss
 
