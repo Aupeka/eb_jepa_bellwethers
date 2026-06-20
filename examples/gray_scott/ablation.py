@@ -60,7 +60,7 @@ def _build_final_cfg(base_cfg_path, combo, best_params, final_epochs, ckpt_dir,
         cfg = OmegaConf.merge(cfg, OmegaConf.from_dotlist(
             [f"{k}={v}" for k, v in best_params.items()]))
     cfg.meta.ckpt_dir = ckpt_dir
-    cfg.logging.wandb = bool(use_wandb)
+    cfg.logging.log_wandb = bool(use_wandb)
     if use_wandb:
         cfg.logging.wandb_project = wandb_project
         cfg.logging.wandb_group = combo["name"]

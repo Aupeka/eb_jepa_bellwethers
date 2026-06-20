@@ -93,13 +93,13 @@ def objective(trial, base_cfg_path, short_run_epochs, combo=None, param_cap_m=No
 
     # Trials log to W&B only when explicitly requested (otherwise 20xN runs are noisy).
     if wandb_trials:
-        cfg.logging.wandb = True
+        cfg.logging.log_wandb = True
         if wandb_project:
             cfg.logging.wandb_project = wandb_project
         cfg.logging.wandb_group = (combo or {}).get("name", "tune") + "-tune"
         cfg.logging.wandb_run = f"{cfg.logging.wandb_group}-t{trial.number}"
     else:
-        cfg.logging.wandb = False
+        cfg.logging.log_wandb = False
 
     print("\n" + "=" * 40)
     print(f"--- Trial {trial.number} [{(combo or {}).get('name', regularizer)}] ---")

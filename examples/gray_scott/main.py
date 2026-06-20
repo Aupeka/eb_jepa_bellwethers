@@ -95,26 +95,6 @@ def build_jepa(encoder, cfg):
     return jepa.JEPA(encoder, encoder, predictor, anti_collapse, pred_cost)
 
 
-def _init_wandb(cfg, run_name):
-    """Optional W&B run. No-op unless ``cfg.logging.wandb`` is true and WANDB_DISABLED
-    is not set. Reuses WANDB_DIR (set by env.sh) so files land on /lustre/work."""
-    lcfg = cfg.get("logging", {})
-    if not bool(lcfg.get("wandb", False)):
-        return None
-    if os.environ.get("WANDB_DISABLED", "false").lower() == "true":
-        return None
-    try:
-        import wandb
-    except ImportError:
-        print("[wandb] not installed (uv pip install wandb); skipping logging", flush=True)
-        return None
-    return wandb.init(
-        project=lcfg.get("wandb_project", "gray-scott-jepa"),
-        name=run_name, group=lcfg.get("wandb_group", run_name),
-        config=OmegaConf.to_container(cfg, resolve=True),
-        dir=os.environ.get("WANDB_DIR"), reinit=True)
-
-
 # --------------------------------------------------------------------------- #
 # TRAINING LOOP  — provided
 # --------------------------------------------------------------------------- #
@@ -139,11 +119,6 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
     n_params = sum(p.numel() for p in jepa.parameters())
     print(f"[gs] params: {n_params / 1e6:.2f}M", flush=True)
 
-    run_name = cfg.get("logging", {}).get("wandb_run") or os.path.basename(folder or cfg.meta.ckpt_dir)
-    wb = _init_wandb(cfg, run_name)
-    if wb is not None:
-        wb.summary["n_params"] = int(n_params)
-
     opt = torch.optim.Adam(jepa.parameters(), lr=cfg.optim.lr)
     use_amp = bool(cfg.training.use_amp) and device.type == "cuda"
     amp_dtype = torch.bfloat16 if cfg.training.get("dtype", "bfloat16") == "bfloat16" else torch.float16
@@ -159,10 +134,11 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
         project=cfg.logging.get("wandb_project", "eb_jepa"),
         config={
             "example": "gray_scott",
+            "n_params": int(n_params),
             **OmegaConf.to_container(cfg, resolve=True),
         },
         run_dir=ckpt_dir,
-        run_name=f"gs_seed{cfg.meta.seed}",
+        run_name=cfg.logging.get("wandb_run") or f"gs_seed{cfg.meta.seed}",
         tags=[f"seed_{cfg.meta.seed}", "gray_scott"],
         group=cfg.logging.get("wandb_group"),
         enabled=use_wandb,
@@ -260,9 +236,6 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
         wandb.log({"best_val_pred_loss": best_val_pred_loss}, step=gstep)
         wandb.finish()
     print(f"[gs] done -> {ckpt_dir}/latest.pth.tar and best.pth.tar", flush=True)
-    if wb is not None:
-        wb.summary["best_val_pred_loss"] = best_val_pred_loss
-        wb.finish()
     return best_val_pred_loss
 
 

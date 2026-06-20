@@ -21,12 +21,8 @@ model:
   # TODO: add any extra hyperparameters your encoder / JEPA assembly need
   #       (e.g. ema decay, projector spec, predictor variant)
 loss:
-<<<<<<< HEAD
-  std_coeff: 1.0       # VCLoss variance term (anti-collapse)
-=======
   regularizer: vicreg   # anti-collapse: vicreg (VCLoss) | sigreg (Epps-Pulley SIGReg)
   std_coeff: 10.0       # VCLoss variance term (anti-collapse)
->>>>>>> 450d64670aa38337e42eec9b277d10d525499b6c
   cov_coeff: 100.0      # VCLoss covariance term
   sigreg_coeff: 10.0    # SIGReg weight on the Epps-Pulley Gaussianity statistic
   num_slices: 256       # SIGReg: number of random 1-D projections
