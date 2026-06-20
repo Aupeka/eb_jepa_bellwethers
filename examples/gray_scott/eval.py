@@ -95,7 +95,7 @@ def build_decoder(encoder, dstc, device, ckpt_path, cfg):
         decoder.train()
         encoder.eval()
 
-        for epoch in range(5):
+        for epoch in range(2):
             total_loss = 0
             for batch in train_loader:
                 x = batch["video"].to(device, non_blocking=True)
