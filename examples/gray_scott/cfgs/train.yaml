@@ -9,8 +9,8 @@ data:
   img_size: 128
   n_frames: 10          # frames per clip
   time_stride: 4        # Gray-Scott evolves slowly -> space frames out
-  epoch_size: 100 #2048      # number of clips to sample per epoch
-  batch_size: 128 #512
+  epoch_size: 2048      # number of clips to sample per epoch (must be >= batch_size)
+  batch_size: 16
   num_workers: 16
 model:
   dobs: 2               # two chemical fields A, B (encoder in_d)

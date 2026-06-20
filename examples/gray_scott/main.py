@@ -125,6 +125,12 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
     print(f"[gs] {len(train_loader.dataset.files)} train hdf5 | "
           f"clip=[{dcfg.channels},{dcfg.n_frames},{dcfg.img_size},{dcfg.img_size}] "
           f"stride={dcfg.time_stride} | {len(train_loader)} steps/epoch", flush=True)
+    if len(train_loader) == 0:
+        raise ValueError(
+            f"train_loader has 0 steps/epoch: data.epoch_size ({dcfg.epoch_size}) "
+            f"< data.batch_size ({dcfg.batch_size}) with drop_last=True, so no "
+            f"training step runs and the model never updates. Increase "
+            f"data.epoch_size (>= batch_size) or decrease data.batch_size.")
 
     encoder = build_encoder(cfg.model).to(device)
     jepa = build_jepa(encoder, cfg).to(device)
@@ -144,7 +150,7 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
     def _dbg(hyp, message, data):
         import json as _json
         import time as _time
-        rec = {"sessionId": "5a0aa9", "runId": "run1", "hypothesisId": hyp,
+        rec = {"sessionId": "5a0aa9", "runId": "post-fix", "hypothesisId": hyp,
                "location": "examples/gray_scott/main.py", "message": message,
                "data": data, "timestamp": int(_time.time() * 1000)}
         line = _json.dumps(rec, default=str)
