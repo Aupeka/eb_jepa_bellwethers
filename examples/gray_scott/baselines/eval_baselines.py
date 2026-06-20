@@ -24,6 +24,7 @@ import argparse
 import csv
 import json
 import os
+import warnings
 
 import matplotlib
 
@@ -44,6 +45,12 @@ from examples.gray_scott.baselines.well_rollout import (
     field_average,
     field_names,
     window_means,
+)
+from examples.gray_scott.baselines.viz import (
+    make_rollout_gif,
+    plot_spectral_diagnostic,
+    plot_vrmse_with_bands,
+    stability_horizon,
 )
 
 MODEL_KINDS = {
@@ -111,9 +118,9 @@ def build_datasets(cfg, well_base_path: str):
     return test_dataset, rollout_dataset
 
 
-def make_dataloader(dataset, batch_size: int, workers: int) -> DataLoader:
+def make_dataloader(dataset, batch_size: int, workers: int, drop_last: bool = True) -> DataLoader:
     return DataLoader(
-        dataset, batch_size=batch_size, shuffle=False, drop_last=True,
+        dataset, batch_size=batch_size, shuffle=False, drop_last=drop_last,
         num_workers=workers, pin_memory=True,
     )
 
@@ -122,6 +129,7 @@ def load_models(cfg, meta, device):
     expected_in = int(cfg.n_steps_input) * meta.n_fields
     expected_out = meta.n_fields
     models = {}
+    param_counts = {}
     for entry in cfg.models:
         kind = MODEL_KINDS[entry.kind]
         model = kind.from_pretrained(entry.id).to(device).eval().float()
@@ -138,9 +146,12 @@ def load_models(cfg, meta, device):
             raise ValueError(
                 f"{entry.name} ({entry.id}) has dim_out={dim_out}, expected {expected_out} fields."
             )
+        n_params = sum(p.numel() for p in model.parameters())
         models[entry.name] = model
-        print(f"[load] {entry.name:11s} {entry.id}  dim_in={dim_in} dim_out={dim_out}", flush=True)
-    return models
+        param_counts[entry.name] = n_params
+        print(f"[load] {entry.name:11s} {entry.id}  dim_in={dim_in} dim_out={dim_out} "
+              f"params={n_params/1e6:.2f}M", flush=True)
+    return models, param_counts
 
 
 def run_one_step(ev: WellEvaluator, models, test_loader, max_batches=None):
@@ -156,56 +167,84 @@ def run_one_step(ev: WellEvaluator, models, test_loader, max_batches=None):
             assert y_pred.shape[-1] == ev.meta.n_fields, "unexpected field count"
             per_field[name].append(ev.vrmse_per_step(y_pred, y_ref)[0])  # [C] (single step)
         n += 1
+        if bi % 20 == 0:
+            cap = f"/{max_batches}" if max_batches else ""
+            print(f"   [one-step] batch {bi}{cap}", flush=True)
     if n == 0:
         raise RuntimeError("No test batches consumed for one-step eval.")
     return {name: torch.stack(v).mean(0).numpy() for name, v in per_field.items()}
 
 
+def _bands_from_per_traj(per_traj_list):
+    """Stack per-batch ``[B, T]`` VRMSE into ``[N_traj, T]`` and derive mean + percentile bands.
+
+    Non-finite (diverged) trajectories are kept in the mean (so it goes inf where the model
+    blows up) but mapped to nan for the percentile band so the band ends at divergence."""
+    arr = torch.cat(per_traj_list, dim=0).numpy()  # [N_traj, T]
+    finite = np.where(np.isfinite(arr), arr, np.nan)
+    with warnings.catch_warnings():  # a fully-diverged horizon is an all-nan slice -> nan band
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        median = np.nanpercentile(finite, 50, axis=0)
+        p10 = np.nanpercentile(finite, 10, axis=0)
+        p90 = np.nanpercentile(finite, 90, axis=0)
+    return {
+        "official": np.mean(arr, axis=0),  # inf-aware mean curve (matches prior behavior)
+        "median": median,
+        "p10": p10,
+        "p90": p90,
+        "per_traj": arr,
+    }
+
+
 def run_rollout(ev: WellEvaluator, models, rollout_loader, H, max_trajectories=None):
-    """Autoregressive rollout from trajectory start. Returns per-step VRMSE arrays + viz cache."""
-    official = {name: [] for name in models}          # list of [T, C] per batch (per-sample VRMSE)
-    agg_num = {name: None for name in models}         # running sum [T, C]
+    """Autoregressive rollout from trajectory start. Returns per-step VRMSE arrays + viz cache.
+
+    The rollout loader may be batched (B>1); ``max_trajectories`` caps the number of
+    TRAJECTORIES (samples) consumed, not batches."""
+    per_traj = {name: [] for name in models}          # list of [B, T] field-averaged per sample
+    agg_num = {name: None for name in models}          # running sum [T, C]
     agg_den = {name: None for name in models}
-    base_official = {"persistence": [], "mean": []}
+    base_per_traj = {"persistence": [], "mean": []}
     viz = None
-    n = 0
+    seen = 0
     for bi, batch in enumerate(rollout_loader):
-        if max_trajectories is not None and bi >= max_trajectories:
-            break
+        first_batch = bi == 0
         viz_models = {}
         for name, model in models.items():
             y_pred, y_ref = ev.rollout_model(model, batch, max_rollout_steps=H)
             assert y_pred.shape == y_ref.shape, f"{name}: {y_pred.shape} vs {y_ref.shape}"
-            official[name].append(ev.vrmse_per_step(y_pred, y_ref))
+            per_traj[name].append(ev.vrmse_per_sample(y_pred, y_ref))  # [B, T]
             num, den = ev.vrmse_terms_per_step(y_pred, y_ref)
             agg_num[name] = num if agg_num[name] is None else agg_num[name] + num
             agg_den[name] = den if agg_den[name] is None else agg_den[name] + den
-            if bi == 0:
+            if first_batch:
                 viz_models[name] = y_pred[0].float().cpu().numpy()  # [T, *spatial, C]
         persistence, mean_pred, y_ref = ev.persistence_and_mean(batch, max_rollout_steps=H)
-        base_official["persistence"].append(ev.vrmse_per_step(persistence, y_ref))
-        base_official["mean"].append(ev.vrmse_per_step(mean_pred, y_ref))
-        if bi == 0:
+        base_per_traj["persistence"].append(ev.vrmse_per_sample(persistence, y_ref))
+        base_per_traj["mean"].append(ev.vrmse_per_sample(mean_pred, y_ref))
+        if first_batch:
             viz = {"truth": y_ref[0].float().cpu().numpy(), "models": viz_models}
-        n += 1
-    if n == 0:
+        seen += y_ref.shape[0]
+        if bi % 10 == 0:
+            cap = f"/{max_trajectories}" if max_trajectories else ""
+            print(f"   [rollout] trajectory {seen}{cap}", flush=True)
+        if max_trajectories is not None and seen >= max_trajectories:
+            break
+    if seen == 0:
         raise RuntimeError("No rollout trajectories consumed.")
 
     out = {}
     for name in models:
-        per_step_field = torch.stack(official[name]).mean(0)  # [T, C]
+        bands = _bands_from_per_traj(per_traj[name])
         agg = torch.sqrt(agg_num[name] / (agg_den[name] + 1e-7))  # [T, C]
-        out[name] = {
-            "official": field_average(per_step_field),       # [T]
-            "aggregated": field_average(agg),                 # [T]
-            "per_field_official": per_step_field.numpy(),     # [T, C]
-        }
-    for name in base_official:
-        out[name] = {"official": field_average(torch.stack(base_official[name]).mean(0))}
+        bands["aggregated"] = field_average(agg)
+        out[name] = bands
+    for name in base_per_traj:
+        out[name] = _bands_from_per_traj(base_per_traj[name])
     return out, viz
 
 
-def write_outputs(out_dir, cfg, meta, one_step, rollout, viz):
+def write_outputs(out_dir, cfg, meta, one_step, rollout, viz, param_counts):
     os.makedirs(out_dir, exist_ok=True)
     fields = field_names(meta)
     model_names = [e.name for e in cfg.models]
@@ -223,34 +262,44 @@ def write_outputs(out_dir, cfg, meta, one_step, rollout, viz):
             "H": H,
             "windows": {k: list(v) for k, v in ROLLOUT_WINDOWS.items()},
             "vrmse": "official per-sample the_well.benchmark.metrics.VRMSE; 'aggregated' = sqrt(sum MSE / sum var)",
+            "bands": "per-trajectory spread (median + 10-90th percentile) from a single full-test pass",
         },
         "fields": fields,
         "models": {},
     }
     for name in model_names:
         r = rollout[name]
-        wins = window_means(r["official"])
         metrics["models"][name] = {
+            "n_params": int(param_counts[name]),
+            "n_params_millions": round(param_counts[name] / 1e6, 3),
             "one_step_vrmse_field_avg": float(np.mean(one_step[name])),
             "one_step_vrmse_per_field": {f: float(v) for f, v in zip(fields, one_step[name])},
-            "rollout_window_vrmse_official": wins,
+            "rollout_window_vrmse_official": window_means(r["official"]),
             "rollout_window_vrmse_aggregated": window_means(r["aggregated"]),
+            "stability_horizon": stability_horizon(r["official"], H),
         }
     for name in ("persistence", "mean"):
-        metrics["models"][name] = {"rollout_window_vrmse_official": window_means(rollout[name]["official"])}
+        metrics["models"][name] = {
+            "rollout_window_vrmse_official": window_means(rollout[name]["official"]),
+            "stability_horizon": stability_horizon(rollout[name]["official"], H),
+        }
 
     with open(os.path.join(out_dir, "metrics.json"), "w") as f:
         json.dump(metrics, f, indent=2)
 
     with open(os.path.join(out_dir, "metrics.csv"), "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["model", "one_step_vrmse"] + [f"rollout_{k}" for k in ROLLOUT_WINDOWS])
+        w.writerow(["model", "n_params_M", "one_step_vrmse"]
+                   + [f"rollout_{k}" for k in ROLLOUT_WINDOWS] + ["stability_horizon"])
         for name in model_names:
-            wins = metrics["models"][name]["rollout_window_vrmse_official"]
-            w.writerow([name, f"{np.mean(one_step[name]):.5f}"] + [f"{wins[k]:.5f}" for k in ROLLOUT_WINDOWS])
+            m = metrics["models"][name]
+            wins = m["rollout_window_vrmse_official"]
+            w.writerow([name, f"{m['n_params_millions']:.3f}", f"{np.mean(one_step[name]):.5f}"]
+                       + [f"{wins[k]:.5f}" for k in ROLLOUT_WINDOWS] + [m["stability_horizon"]])
         for name in ("persistence", "mean"):
-            wins = metrics["models"][name]["rollout_window_vrmse_official"]
-            w.writerow([name, ""] + [f"{wins[k]:.5f}" for k in ROLLOUT_WINDOWS])
+            m = metrics["models"][name]
+            wins = m["rollout_window_vrmse_official"]
+            w.writerow([name, "", ""] + [f"{wins[k]:.5f}" for k in ROLLOUT_WINDOWS] + [m["stability_horizon"]])
 
     with open(os.path.join(out_dir, "per_model_rollout_vrmse.csv"), "w", newline="") as f:
         w = csv.writer(f)
@@ -261,31 +310,27 @@ def write_outputs(out_dir, cfg, meta, one_step, rollout, viz):
             row += [f"{rollout['persistence']['official'][i]:.6f}", f"{rollout['mean']['official'][i]:.6f}"]
             w.writerow(row)
 
-    _plot_vrmse_vs_horizon(out_dir, cfg, rollout, horizons)
+    # per_model_rollout_vrmse_band.csv: per-horizon median / p10 / p90 for every model + baselines
+    band_names = model_names + ["persistence", "mean"]
+    with open(os.path.join(out_dir, "per_model_rollout_vrmse_band.csv"), "w", newline="") as f:
+        w = csv.writer(f)
+        cols = ["horizon"]
+        for n in band_names:
+            cols += [f"{n}_median", f"{n}_p10", f"{n}_p90"]
+        w.writerow(cols)
+        for i, h in enumerate(horizons):
+            row = [h]
+            for n in band_names:
+                r = rollout[n]
+                row += [f"{r['median'][i]:.6f}", f"{r['p10'][i]:.6f}", f"{r['p90'][i]:.6f}"]
+            w.writerow(row)
+
+    plot_vrmse_with_bands(out_dir, cfg, rollout, horizons)
     if viz is not None:
         _plot_rollout_comparison(out_dir, cfg, meta, viz, H)
+        make_rollout_gif(out_dir, cfg, meta, viz, H)
+        plot_spectral_diagnostic(out_dir, cfg, meta, viz)
     print(f"[done] wrote outputs -> {out_dir}", flush=True)
-
-
-def _plot_vrmse_vs_horizon(out_dir, cfg, rollout, horizons):
-    h = np.asarray(horizons)
-    plt.figure(figsize=(7, 4.5))
-    for e in cfg.models:
-        v = np.asarray(rollout[e.name]["official"], dtype=float)
-        m = np.isfinite(v)  # drop diverged (inf/nan) points so the log plot stays readable
-        label = e.name + (" (diverged)" if not m.all() else "")
-        plt.plot(h[m], v[m], marker="o", ms=3, label=label)
-    plt.plot(horizons, rollout["persistence"]["official"], "k--", lw=1.2, label="persistence")
-    plt.axhline(1.0, color="gray", ls=":", lw=1, label="mean predictor (VRMSE=1)")
-    plt.xlabel("rollout horizon (steps)")
-    plt.ylabel("VRMSE (field-averaged, physical space)")
-    plt.title(f"{cfg.dataset}: autoregressive rollout VRMSE")
-    plt.yscale("log")
-    plt.legend(fontsize=8)
-    plt.grid(alpha=0.3, which="both")
-    plt.tight_layout()
-    plt.savefig(os.path.join(out_dir, "vrmse_vs_horizon.png"), dpi=150)
-    plt.close()
 
 
 def _plot_rollout_comparison(out_dir, cfg, meta, viz, H):
@@ -316,13 +361,25 @@ def main():
     ap.add_argument("--smoke", action="store_true", help="fast debug run (few trajectories, small H)")
     ap.add_argument("--H", type=int, default=None, help="rollout horizon (overrides config)")
     ap.add_argument("--batch-size", type=int, default=None)
+    ap.add_argument("--rollout-batch-size", type=int, default=None,
+                    help="batch size for the autoregressive rollout loader (overrides config; default 16)")
     ap.add_argument("--workers", type=int, default=None, help="data loader workers (overrides config)")
+    ap.add_argument("--max-one-step-batches", type=int, default=None,
+                    help="cap one-step eval to N batches (subsample test set; overrides config)")
+    ap.add_argument("--max-trajectories", type=int, default=None,
+                    help="cap rollout eval to N trajectories (subsample test set; overrides config)")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
 
     cfg = load_config(args)
     if args.workers is not None:
         cfg.data_workers = args.workers
+    if args.rollout_batch_size is not None:
+        cfg.rollout_batch_size = args.rollout_batch_size
+    if args.max_one_step_batches is not None:
+        cfg.max_one_step_batches = args.max_one_step_batches
+    if args.max_trajectories is not None:
+        cfg.max_trajectories = args.max_trajectories
     device = torch.device(args.device)
     well_base_path = resolve_well_base_path()
     out_dir = resolve_out_dir(cfg.dataset)
@@ -335,13 +392,14 @@ def main():
     dset_norm = test_dataset.norm
     assert dset_norm is not None, "normalization not enabled — checkpoints expect normalized inputs"
     workers = int(cfg.get("data_workers", 4))
+    rollout_bs = int(cfg.get("rollout_batch_size", 16))
     test_loader = make_dataloader(test_dataset, int(cfg.batch_size), workers)
-    rollout_loader = make_dataloader(rollout_dataset, 1, workers)
+    rollout_loader = make_dataloader(rollout_dataset, rollout_bs, workers, drop_last=False)
     print(f"[data] {meta.dataset_name}: n_fields={meta.n_fields} fields={field_names(meta)} "
-          f"resolution={tuple(meta.spatial_resolution)}", flush=True)
+          f"resolution={tuple(meta.spatial_resolution)} rollout_batch_size={rollout_bs}", flush=True)
 
     ev = WellEvaluator(meta, dset_norm, device, is_delta=False)
-    models = load_models(cfg, meta, device)
+    models, param_counts = load_models(cfg, meta, device)
 
     max_one_step = int(cfg.get("max_one_step_batches", 0)) or None
     max_traj = int(cfg.get("max_trajectories", 0)) or None
@@ -364,7 +422,7 @@ def main():
         print(f"   {name:11s} one-step={np.mean(one_step[name]):.4f}  "
               f"h1={v[0]:.4f} hH={hH_str}  windows={window_means(v)}", flush=True)
 
-    write_outputs(out_dir, cfg, meta, one_step, rollout, viz)
+    write_outputs(out_dir, cfg, meta, one_step, rollout, viz, param_counts)
 
 
 if __name__ == "__main__":

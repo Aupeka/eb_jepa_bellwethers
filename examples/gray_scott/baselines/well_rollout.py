@@ -137,6 +137,14 @@ class WellEvaluator:
         v = self.vrmse(y_pred, y_ref, self.meta)  # [B, T, C]
         return v.mean(0).float().cpu()
 
+    def vrmse_per_sample(self, y_pred, y_ref) -> torch.Tensor:
+        """Official per-sample, field-averaged VRMSE -> ``[B, T]`` (one curve per trajectory).
+
+        Used to form per-trajectory confidence bands; we deliberately do NOT average over
+        the batch here so the spread across initial conditions is preserved."""
+        v = self.vrmse(y_pred, y_ref, self.meta)  # [B, T, C]
+        return v.mean(-1).float().cpu()  # [B, T]
+
     def vrmse_terms_per_step(self, y_pred, y_ref) -> Tuple[torch.Tensor, torch.Tensor]:
         """Numerator (MSE) and denominator (variance) summed over batch+space -> ``[T, C]`` each.
 
