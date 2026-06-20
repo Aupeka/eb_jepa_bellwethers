@@ -160,6 +160,14 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
                     "cfg": OmegaConf.to_container(cfg, resolve=True)},
                    os.path.join(ckpt_dir, "latest.pth.tar"))
                    
+        # Save periodic checkpoint every 5 epochs
+        if (epoch + 1) % 5 == 0:
+            torch.save({"epoch": epoch,
+                        "encoder": encoder.state_dict(),
+                        "jepa": jepa.state_dict(),
+                        "cfg": OmegaConf.to_container(cfg, resolve=True)},
+                       os.path.join(ckpt_dir, f"ckpt_epoch_{epoch + 1}.pth.tar"))
+                       
         # Early stopping logic
         if val_pred_loss < best_val_pred_loss:
             best_val_pred_loss = val_pred_loss
