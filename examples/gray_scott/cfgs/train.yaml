@@ -21,8 +21,11 @@ model:
   # TODO: add any extra hyperparameters your encoder / JEPA assembly need
   #       (e.g. ema decay, projector spec, predictor variant)
 loss:
+  regularizer: vicreg   # anti-collapse: vicreg (VCLoss) | sigreg (Epps-Pulley SIGReg)
   std_coeff: 10.0       # VCLoss variance term (anti-collapse)
   cov_coeff: 100.0      # VCLoss covariance term
+  sigreg_coeff: 10.0    # SIGReg weight on the Epps-Pulley Gaussianity statistic
+  num_slices: 256       # SIGReg: number of random 1-D projections
 optim:
   epochs: 20
   lr: 1.0e-3
@@ -33,3 +36,5 @@ logging:
   log_every: 50
   save_predictions: true   # latent prediction-vs-target artifacts per epoch
   pred_samples: 4          # number of horizons shown in the heatmap panel
+  wandb: false             # opt-in W&B logging (also honors WANDB_DISABLED from env.sh)
+  wandb_project: gray-scott-jepa-ablation

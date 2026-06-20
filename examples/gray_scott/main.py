@@ -76,13 +76,42 @@ def build_jepa(encoder, cfg):
         architectures.ResUNet(2 * mcfg.dstc, mcfg.hpre, mcfg.dstc),
         context_length=2)
 
-    anti_collapse = losses.VCLoss(
-        lcfg.std_coeff, lcfg.cov_coeff,
-        proj=architectures.Projector(f"{mcfg.dstc}-{mcfg.dstc * 4}-{mcfg.dstc * 4}"))
+    proj = architectures.Projector(f"{mcfg.dstc}-{mcfg.dstc * 4}-{mcfg.dstc * 4}")
+
+    # Anti-collapse regularizer: vicreg (variance+covariance) or sigreg (Epps-Pulley
+    # Gaussianity over random slices). Both share the same call signature and `.proj`.
+    reg_kind = lcfg.get("regularizer", "vicreg")
+    if reg_kind == "vicreg":
+        anti_collapse = losses.VCLoss(lcfg.std_coeff, lcfg.cov_coeff, proj=proj)
+    elif reg_kind == "sigreg":
+        anti_collapse = losses.SIGReg(
+            lcfg.sigreg_coeff, num_slices=int(lcfg.get("num_slices", 256)), proj=proj)
+    else:
+        raise ValueError(f"unknown loss.regularizer={reg_kind!r} (expected vicreg|sigreg)")
 
     pred_cost = losses.SquareLossSeq(anti_collapse.proj)
 
     return jepa.JEPA(encoder, encoder, predictor, anti_collapse, pred_cost)
+
+
+def _init_wandb(cfg, run_name):
+    """Optional W&B run. No-op unless ``cfg.logging.wandb`` is true and WANDB_DISABLED
+    is not set. Reuses WANDB_DIR (set by env.sh) so files land on /lustre/work."""
+    lcfg = cfg.get("logging", {})
+    if not bool(lcfg.get("wandb", False)):
+        return None
+    if os.environ.get("WANDB_DISABLED", "false").lower() == "true":
+        return None
+    try:
+        import wandb
+    except ImportError:
+        print("[wandb] not installed (uv pip install wandb); skipping logging", flush=True)
+        return None
+    return wandb.init(
+        project=lcfg.get("wandb_project", "gray-scott-jepa"),
+        name=run_name, group=lcfg.get("wandb_group", run_name),
+        config=OmegaConf.to_container(cfg, resolve=True),
+        dir=os.environ.get("WANDB_DIR"), reinit=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -106,7 +135,13 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
 
     encoder = build_encoder(cfg.model).to(device)
     jepa = build_jepa(encoder, cfg).to(device)
-    print(f"[gs] params: {sum(p.numel() for p in jepa.parameters()) / 1e6:.2f}M", flush=True)
+    n_params = sum(p.numel() for p in jepa.parameters())
+    print(f"[gs] params: {n_params / 1e6:.2f}M", flush=True)
+
+    run_name = cfg.get("logging", {}).get("wandb_run") or os.path.basename(folder or cfg.meta.ckpt_dir)
+    wb = _init_wandb(cfg, run_name)
+    if wb is not None:
+        wb.summary["n_params"] = int(n_params)
 
     opt = torch.optim.Adam(jepa.parameters(), lr=cfg.optim.lr)
     use_amp = bool(cfg.training.use_amp) and device.type == "cuda"
@@ -139,6 +174,9 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
             if gstep % cfg.logging.log_every == 0:
                 print(f"e{epoch} s{gstep} loss={jepa_loss.item():.4f} "
                       f"vc={regl.item():.4f} pred={pl.item():.4f}", flush=True)
+                if wb is not None:
+                    wb.log({"train/jepa_loss": jepa_loss.item(), "train/reg": regl.item(),
+                            "train/pred": pl.item(), "epoch": epoch, "step": gstep})
 
         # val
         jepa.eval(); vl = 0.0; vp = 0.0; nb = 0
@@ -152,6 +190,8 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
         val_loss = vl / max(nb, 1)
         val_pred_loss = vp / max(nb, 1)
         print(f"[epoch {epoch}] {time.time() - t0:.0f}s | val_loss={val_loss:.4f} val_pred={val_pred_loss:.4f}", flush=True)
+        if wb is not None:
+            wb.log({"val/loss": val_loss, "val/pred": val_pred_loss, "epoch": epoch})
         
         # Save latest checkpoint
         torch.save({"epoch": epoch,
@@ -185,6 +225,9 @@ def run(fname="examples/gray_scott/cfgs/train.yaml", cfg=None, folder=None, **ov
                 break
 
     print(f"[gs] done -> {ckpt_dir}/latest.pth.tar and best.pth.tar", flush=True)
+    if wb is not None:
+        wb.summary["best_val_pred_loss"] = best_val_pred_loss
+        wb.finish()
     return best_val_pred_loss
 
 
