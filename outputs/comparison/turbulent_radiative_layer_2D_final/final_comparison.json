@@ -1,0 +1,63 @@
+{
+  "dataset": "turbulent_radiative_layer_2D",
+  "metric": "official",
+  "poseidon_model": "Poseidon",
+  "table": [
+    {
+      "model": "FNO",
+      "params_M": 19.012,
+      "vrmse_h1": 2.031089,
+      "vrmse_h10": 452784128.0,
+      "vrmse_h30": Infinity,
+      "stability_horizon": 0
+    },
+    {
+      "model": "TFNO",
+      "params_M": 19.277,
+      "vrmse_h1": 4.338454,
+      "vrmse_h10": 3.82149,
+      "vrmse_h30": 3.750368,
+      "stability_horizon": 0
+    },
+    {
+      "model": "U-Net",
+      "params_M": 17.467,
+      "vrmse_h1": 0.17101,
+      "vrmse_h10": 0.733608,
+      "vrmse_h30": 1.5217,
+      "stability_horizon": 14
+    },
+    {
+      "model": "CNextU-Net",
+      "params_M": 18.575,
+      "vrmse_h1": 0.142459,
+      "vrmse_h10": 0.580784,
+      "vrmse_h30": 1.202294,
+      "stability_horizon": 23
+    },
+    {
+      "model": "Poseidon",
+      "params_M": null,
+      "vrmse_h1": 0.784619,
+      "vrmse_h10": 1.352031,
+      "vrmse_h30": 2.315413,
+      "stability_horizon": 4
+    },
+    {
+      "model": "persistence",
+      "params_M": 0.0,
+      "vrmse_h1": 0.620026,
+      "vrmse_h10": 1.175638,
+      "vrmse_h30": 1.57919,
+      "stability_horizon": 4
+    },
+    {
+      "model": "mean",
+      "params_M": 0.0,
+      "vrmse_h1": 1.00775,
+      "vrmse_h10": 1.354207,
+      "vrmse_h30": 1.699193,
+      "stability_horizon": 0
+    }
+  ]
+}
