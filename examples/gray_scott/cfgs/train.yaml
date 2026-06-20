@@ -1,45 +1,85 @@
-# Gray-Scott temporal-JEPA pretraining config — 2D physical video [2,T,128,128].
+# # Gray-Scott temporal-JEPA pretraining config — 2D physical video [2,T,128,128].
+# meta:
+#   seed: 0
+#   ckpt_dir: UPDATEME/checkpoints/gray_scott/dev
+# data:
+#   data_root: /lustre/work/pdl17890/udl806719/datasets/the_well/gray_scott_reaction_diffusion
+#   split: train
+#   channels: 2
+#   img_size: 128
+#   n_frames: 10          # frames per clip
+#   time_stride: 4        # Gray-Scott evolves slowly -> space frames out
+#   epoch_size: 2048      # number of clips to sample per epoch (must be >= batch_size)
+#   batch_size: 16
+#   num_workers: 16
+# model:
+#   dobs: 2               # two chemical fields A, B (encoder in_d)
+#   encoder: fno      # encoder backbone: resnet5 | fno
+#   henc: 32              # encoder hidden width
+#   dstc: 16              # latent dim D (encoder out_d)
+#   fno_modes: 16         # FNO: number of low Fourier modes kept per axis (encoder=fno)
+#   fno_layers: 4         # FNO: number of Fourier blocks (encoder=fno)
+#   hpre: 32              # predictor (ResUNet) hidden width
+#   steps: 4              # JEPA prediction steps (context_length=2)
+#   # TODO: add any extra hyperparameters your encoder / JEPA assembly need
+#   #       (e.g. ema decay, projector spec, predictor variant)
+# loss:
+#   regularizer: vicreg   # anti-collapse: vicreg (VCLoss) | sigreg (Epps-Pulley SIGReg)
+#   std_coeff: 10.0       # VCLoss variance term (anti-collapse)
+#   cov_coeff: 100.0      # VCLoss covariance term
+#   sigreg_coeff: 10.0    # SIGReg weight on the Epps-Pulley Gaussianity statistic
+#   num_slices: 256       # SIGReg: number of random 1-D projections
+# optim:
+#   epochs: 20
+#   lr: 1.0e-3
+# training:
+#   use_amp: true
+#   dtype: bfloat16
+# logging:
+#   log_every: 50
+#   save_predictions: true   # latent prediction-vs-target artifacts per epoch
+#   pred_samples: 4          # number of horizons shown in the heatmap panel
+#   log_wandb: true
+#   wandb_project: eb_jepa
+#   wandb_group:             # optional: group runs together (e.g. sweep name)
+#   wandb_sweep_id:          # optional: associate with a wandb sweep
+
 meta:
   seed: 0
-  ckpt_dir: UPDATEME/checkpoints/gray_scott/dev
+  ckpt_dir: outputs/ablations/resnet5_sigreg_K4/checkpoint
 data:
   data_root: /lustre/work/pdl17890/udl806719/datasets/the_well/gray_scott_reaction_diffusion
   split: train
   channels: 2
   img_size: 128
-  n_frames: 10          # frames per clip
-  time_stride: 4        # Gray-Scott evolves slowly -> space frames out
-  epoch_size: 2048      # number of clips to sample per epoch (must be >= batch_size)
-  batch_size: 16
+  n_frames: 10
+  time_stride: 4
+  epoch_size: 1024
+  batch_size: 32
   num_workers: 16
 model:
-  dobs: 2               # two chemical fields A, B (encoder in_d)
-  encoder: fno      # encoder backbone: resnet5 | fno
-  henc: 32              # encoder hidden width
-  dstc: 16              # latent dim D (encoder out_d)
-  fno_modes: 16         # FNO: number of low Fourier modes kept per axis (encoder=fno)
-  fno_layers: 4         # FNO: number of Fourier blocks (encoder=fno)
-  hpre: 32              # predictor (ResUNet) hidden width
-  steps: 4              # JEPA prediction steps (context_length=2)
-  # TODO: add any extra hyperparameters your encoder / JEPA assembly need
-  #       (e.g. ema decay, projector spec, predictor variant)
+  dobs: 2
+  henc: 64
+  dstc: 8
+  hpre: 64
+  steps: 4
 loss:
-  regularizer: vicreg   # anti-collapse: vicreg (VCLoss) | sigreg (Epps-Pulley SIGReg)
-  std_coeff: 10.0       # VCLoss variance term (anti-collapse)
-  cov_coeff: 100.0      # VCLoss covariance term
-  sigreg_coeff: 10.0    # SIGReg weight on the Epps-Pulley Gaussianity statistic
-  num_slices: 256       # SIGReg: number of random 1-D projections
+  regularizer: sigreg
+  std_coeff: 1.0
+  cov_coeff: 100.0
+  sigreg_coeff: 3.2560025140859397
+  num_slices: 256
 optim:
   epochs: 20
-  lr: 1.0e-3
+  lr: 0.001229810059494964
 training:
   use_amp: true
   dtype: bfloat16
 logging:
   log_every: 50
-  save_predictions: true   # latent prediction-vs-target artifacts per epoch
-  pred_samples: 4          # number of horizons shown in the heatmap panel
-  log_wandb: true
+  save_predictions: true
+  pred_samples: 4
+  log_wandb: false
   wandb_project: eb_jepa
-  wandb_group:             # optional: group runs together (e.g. sweep name)
-  wandb_sweep_id:          # optional: associate with a wandb sweep
+  wandb_group: null
+  wandb_sweep_id: null
